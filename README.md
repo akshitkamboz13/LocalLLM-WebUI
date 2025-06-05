@@ -56,8 +56,8 @@ A modern, feature-rich chat interface for Ollama AI models. SiLynkr provides a p
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/si4k/silynkr.git
-cd silynkr
+git clone https://github.com/akshitkamboz13/LocalLLM-WebUI.git
+cd LocalLLM-WebUI
 ```
 
 2. Install dependencies:
