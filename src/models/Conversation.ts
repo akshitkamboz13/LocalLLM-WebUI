@@ -23,4 +23,17 @@ const ConversationSchema = new Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
-export default mongoose.models.Conversation || mongoose.model('Conversation', ConversationSchema);
+// Check if the model exists before creating it to prevent overwriting
+let Conversation;
+
+if (mongoose.models && mongoose.models.Conversation) {
+  Conversation = mongoose.models.Conversation;
+} else if (mongoose.connection && mongoose.connection.readyState === 1) {
+  // Only create the model if we have an active connection
+  Conversation = mongoose.model('Conversation', ConversationSchema);
+} else {
+  // Default fallback when no connection yet
+  Conversation = mongoose.models.Conversation || mongoose.model('Conversation', ConversationSchema);
+}
+
+export default Conversation;

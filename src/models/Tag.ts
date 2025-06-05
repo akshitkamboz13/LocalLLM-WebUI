@@ -6,4 +6,17 @@ const TagSchema = new Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-export default mongoose.models.Tag || mongoose.model('Tag', TagSchema);
+// Check if the model exists before creating it to prevent overwriting
+let Tag;
+
+if (mongoose.models && mongoose.models.Tag) {
+  Tag = mongoose.models.Tag;
+} else if (mongoose.connection && mongoose.connection.readyState === 1) {
+  // Only create the model if we have an active connection
+  Tag = mongoose.model('Tag', TagSchema);
+} else {
+  // Default fallback when no connection yet
+  Tag = mongoose.models.Tag || mongoose.model('Tag', TagSchema);
+}
+
+export default Tag;

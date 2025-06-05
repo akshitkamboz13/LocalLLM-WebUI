@@ -39,6 +39,7 @@ export default function OllamaTest() {
           {error}
         </div>
       )}
+
       
       {result && (
         <div className="mt-4">

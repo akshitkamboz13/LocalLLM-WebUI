@@ -1,0 +1,2 @@
+code: 'ERR_INVALID_URL',
+input: '/ollama-api/tags'

@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { connectToDatabase } from '@/lib/mongodb';
+import { connectToDatabase, getConversations, storeConversation } from '@/lib/mongodb';
+import mongoose from 'mongoose';
 import Conversation from '@/models/Conversation';
 
 export async function GET(request: NextRequest) {
   try {
-    await connectToDatabase();
-    
     // Parse query parameters
     const url = new URL(request.url);
     const folderId = url.searchParams.get('folderId');
     const tagId = url.searchParams.get('tagId');
     
-    let query = {};
+    let query: any = {};
     
     if (folderId) {
       query = { ...query, folderId };
@@ -20,17 +19,27 @@ export async function GET(request: NextRequest) {
     if (tagId) {
       query = { ...query, tags: tagId };
     }
+
+    // Get MongoDB URI from request header if available
+    const mongodbUri = request.headers.get('x-mongodb-uri') || '';
     
-    const conversations = await Conversation.find(query)
-      .sort({ updatedAt: -1 })
-      .populate('tags')
-      .populate('folderId');
+    // Connect to MongoDB with the provided URI
+    const connected = await connectToDatabase(mongodbUri);
+    
+    if (!connected) {
+      console.log('Using local storage fallback for conversations');
+    }
+
+    // Use the getConversations utility which handles both MongoDB and localStorage
+    const conversations = await getConversations(query);
+    
+    console.log(`Returning ${conversations.length} conversations`);
       
-    return NextResponse.json({ conversations });
+    return NextResponse.json({ success: true, conversations });
   } catch (error) {
     console.error('Error fetching conversations:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch conversations' },
+      { success: false, error: 'Failed to fetch conversations' },
       { status: 500 }
     );
   }
@@ -38,17 +47,33 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await connectToDatabase();
-    const body = await request.json();
+    const { conversation } = await request.json();
     
-    const conversation = new Conversation(body);
-    await conversation.save();
+    if (!conversation) {
+      return NextResponse.json(
+        { success: false, error: 'No conversation data provided' },
+        { status: 400 }
+      );
+    }
     
-    return NextResponse.json({ conversation });
+    // Get MongoDB URI from request header if available
+    const mongodbUri = request.headers.get('x-mongodb-uri') || '';
+    
+    // Connect to MongoDB with the provided URI
+    const connected = await connectToDatabase(mongodbUri);
+    
+    if (!connected) {
+      console.log('Using local storage fallback for saving conversation');
+    }
+    
+    // Use storeConversation utility which handles both MongoDB and localStorage
+    const savedConversation = await storeConversation(conversation);
+    
+    return NextResponse.json({ success: true, conversation: savedConversation });
   } catch (error) {
     console.error('Error creating conversation:', error);
     return NextResponse.json(
-      { error: 'Failed to create conversation' },
+      { success: false, error: error instanceof Error ? error.message : 'Failed to create conversation' },
       { status: 500 }
     );
   }

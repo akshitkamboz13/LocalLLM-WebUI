@@ -1,23 +1,50 @@
-# Ollama Chat - Local AI Chatbot Interface
+# SiLynkr - Modern AI Chat Interface
 
-## What is Ollama Chat?
+![SiLynkr](https://img.shields.io/badge/SiLynkr-AI%20Chat%20Interface-blue?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-1.0.0--beta-green?style=flat-square)
+![Next.js](https://img.shields.io/badge/Next.js-15+-black?style=flat-square&logo=next.js)
+![MongoDB](https://img.shields.io/badge/MongoDB-Ready-green?style=flat-square&logo=mongodb)
 
-Ollama Chat is a modern, feature-rich web interface for interacting with local AI models through Ollama. It provides a user-friendly way to chat with AI models running on your own machine, ensuring privacy, customization, and control over your AI interactions.
+A modern, feature-rich chat interface for Ollama AI models. SiLynkr provides a professional-grade interface for interacting with locally running AI models, ensuring privacy, customization, and control over your AI interactions.
 
-### Key Features
+## 🌟 Why Choose SiLynkr?
 
-- **Local AI Interaction**: Chat with AI models running locally on your machine through Ollama
-- **Conversation Organization**: Organize chats with folders and tags for better workspace management
-- **URL Parameter Configuration**: Quickly set up chat sessions with specific models and parameters via URL
-- **Advanced Chat Parameters**: Control system prompts and parameters at different levels (per-chat, per-account, or per-model)
-- **Conversation Sharing**: Share conversations locally or via the Open WebUI Community platform with privacy controls
-- **Mathematical Expression Support**: Render complex equations with KaTeX integration
-- **Dark/Light Mode**: Toggle between dark and light themes for comfortable viewing
-- **Markdown & Code Highlighting**: Full support for markdown formatting and syntax highlighting for code blocks
-- **Temperature Control**: Adjust the AI's creativity level with an intuitive slider
-- **MongoDB Integration**: Store conversations and settings in MongoDB (local or Atlas)
+- **Polished UI/UX**: Modern, clean interface with dark/light mode and multiple theme options
+- **Full-featured**: Conversation history, hierarchical folder organization, PDF export
+- **Advanced Options**: Complete access to all Ollama parameters
+- **Storage Options**: MongoDB or local storage
+- **Sharing Capabilities**: Share conversations via links, PDF, or text exports
+- **Well-structured Code**: Maintainable, modular Next.js codebase
 
-## Getting Started
+## 📸 Screenshots
+
+![Ollama Web UI Screenshot](public/screenshot.png)
+
+## 🚀 Key Features
+
+- **Ollama Model Selection**: Use any model available in your Ollama instance
+- **Advanced Folder Organization**: 
+  - Infinite folder nesting capability
+  - Create subfolders directly from folder context menu
+  - Start new chats directly within specific folders
+- **Visual Status Indicators**:
+  - Port status indicator showing connection health
+  - Save status indicator showing whether changes are saved
+- **Advanced Ollama Parameters**: Access all Ollama API parameters:
+  - Temperature, Top-P, Top-K controls
+  - Format options (JSON output)
+  - Custom templates
+  - Thinking mode, raw mode
+  - Custom system prompts
+  - Keep-alive duration control
+- **PDF & Text Export**: Export your conversations in multiple formats
+- **Share via Link**: Generate shareable conversation links
+- **MongoDB Integration**: Store conversations in MongoDB or use localStorage
+- **Modern UI**: Responsive design with multiple theme options (Light, Dark, Obsidian, Nature, Sunset)
+- **Conversation History**: Configurable context window for AI interactions
+- **Smart Port Management**: Automatic port selection with fallbacks
+
+## 🏁 Getting Started
 
 ### Prerequisites
 
@@ -25,136 +52,139 @@ Ollama Chat is a modern, feature-rich web interface for interacting with local A
 - [Ollama](https://ollama.ai/) installed and running on your machine
 - [MongoDB](https://www.mongodb.com/) (optional, for conversation storage)
 
-### Installation
+### Quick Installation
 
 1. Clone the repository:
-
 ```bash
-git clone https://github.com/akshitkamboz13/LocalLLM-WebUI.git
-cd LocalLLM-WebUI
+git clone https://github.com/si4k/silynkr.git
+cd silynkr
 ```
 
 2. Install dependencies:
-
 ```bash
 npm install
 ```
 
-3. Configure environment variables (optional for MongoDB):
-
-Create a `.env` file in the root directory:
-
-```
-# MongoDB Connection
-# Use one of these options:
-MONGODB_URI=mongodb://localhost:27017/AIwebUI
-# MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/AIwebUI
-
-# Server Port
-PORT=5000
-```
-
-4. Start the development server:
-
+3. Start the development server:
 ```bash
-npm run dev:all
+npm run dev
 ```
 
-5. Open [http://localhost:3000](http://localhost:3000) in your browser
+4. SiLynkr will automatically select port 49494 (or a fallback if unavailable)
+   - A colorful message will indicate the running port in the terminal
+   - The UI will display the current port status indicator in the input area
 
-## Usage
+## 🔌 Port Configuration
+
+SiLynkr uses a smart port selection system with automatic fallbacks. By default, it tries to use port 49494, but will try other ports if that one is unavailable.
+
+### Default Port Sequence
+
+| Port  | Description                               |
+|-------|-------------------------------------------|
+| 49494 | Primary port (Default)                    |
+| 49049 | Fallback #1 (Mirror-style symmetry)       |
+| 49994 | Fallback #2 (Maxed out pattern)           |
+| 51951 | Fallback #3 (Si4k-inspired)               |
+| 54321 | Fallback #4 (Debug/Test)                  |
+| 3006  | Dev environment                           |
+| 6969  | UI Testing                                |
+
+### Customizing Ports
+
+You can customize the port settings in two ways:
+
+1. **Environment variable**: Set `PORT=your_port` in your environment or .env file
+2. **Settings file**: Edit `settings.json` to change the primary and fallback ports
+
+```json
+{
+  "serverSettings": {
+    "primaryPort": 49494,
+    "fallbackPorts": [49049, 49994, 51951, 54321, 3006, 6969]
+  }
+}
+```
+
+## 💬 Usage
 
 ### Basic Chat
 
-1. Select an AI model from the dropdown menu
-2. Adjust the temperature slider if desired (higher = more creative, lower = more precise)
-3. Type your message in the input field and press Enter or click the send button
-4. View the AI's response with full markdown and code highlighting support
+1. Select an Ollama model from the dropdown menu
+2. Type your message and press Enter
+3. View the AI's response with full markdown and code highlighting
 
 ### Advanced Features
 
-#### URL Parameters
+#### Folder and Conversation Management
 
-Quickly configure chat sessions by adding parameters to the URL:
-
-```
-http://localhost:3000/?model=llama2&temperature=0.7&systemPrompt=You%20are%20a%20helpful%20assistant
-```
-
-Supported parameters:
-- `model`: Name of the Ollama model to use
-- `temperature`: Value between 0-2
-- `systemPrompt`: Custom system prompt for the AI
-
-#### Conversation Management
-
-- **Create Folders**: Organize conversations by topic or project
+- **Hierarchical Folders**: Create unlimited nested folders for perfect organization
+- **Quick Actions**: Use the "+" button on any folder to:
+  - Create subfolders directly within that folder
+  - Start new chats that are automatically assigned to that folder
 - **Add Tags**: Apply tags to conversations for easier filtering
-- **Save Conversations**: Automatically save conversations for future reference
-- **Share Conversations**: Generate shareable links with customizable privacy settings
+- **Save Conversations**: Manually save or enable auto-save after responses
+- **Share Conversations**: Generate shareable links with privacy settings
 
-#### Mathematical Expressions
+#### Ollama Parameters
 
-Use LaTeX syntax for mathematical expressions:
+Access all Ollama parameters through the settings dialog:
 
-- Inline math: `$E=mc^2$`
-- Block math: 
-  ```
-  $$
-  \int_{a}^{b} f(x) \, dx = F(b) - F(a)
-  $$
-  ```
+- Temperature, Top-P, Top-K
+- Response format (default or JSON)
+- Custom suffix text
+- Custom prompt templates
+- Keep-alive duration
+- Thinking mode for compatible models
+- Raw mode for unformatted prompts
 
-## Architecture
+#### Multiple Themes
 
-- **Frontend**: Next.js with React and Tailwind CSS
-- **Backend**: Next.js API routes + Express server for MongoDB integration
-- **Database**: MongoDB (optional) for conversation storage
-- **AI Integration**: Connects to locally running Ollama instance
+Choose from several built-in themes:
+- Light
+- Dark
+- Obsidian
+- Nature
+- Sunset
+- Custom (customizable)
 
-## Development
+#### Storage Options
 
-### Project Structure
+You can configure MongoDB in two ways:
 
-```
-/
-├── public/           # Static assets
-├── server/           # Express server for MongoDB
-├── src/
-│   ├── app/          # Next.js app router
-│   │   ├── api/      # API routes
-│   │   └── page.tsx  # Main page
-│   ├── components/   # React components
-│   ├── lib/          # Utility functions
-│   ├── models/       # MongoDB models
-│   └── services/     # Service integrations
-└── package.json      # Project dependencies
-```
+1. **Environment Variable**: Set `MONGODB_URI` in `.env`
+2. **UI Settings**: Add MongoDB URI in the settings panel
+
+If no MongoDB connection is available, the app will use localStorage.
+
+## 🏗️ Architecture
+
+- **Frontend**: Next.js 15+ with React and Tailwind CSS
+- **Backend**: Next.js API routes
+- **Database**: MongoDB with localStorage fallback
+- **AI Integration**: Connects to local Ollama instance
+
+## 👩‍💻 Development
 
 ### Available Scripts
 
 - `npm run dev` - Start the Next.js development server
-- `npm run server` - Start the Express server for MongoDB
-- `npm run dev:all` - Start both servers concurrently
 - `npm run build` - Build the application for production
 - `npm run start` - Start the production server
+- `npm run api` - Start only the API server
 
-## Deployment
-
-The application can be deployed on Vercel or any other hosting platform that supports Next.js applications. For the MongoDB integration, ensure your database is accessible from your hosting environment.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
+## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Acknowledgements
+## 🙏 Acknowledgements
 
 - [Ollama](https://ollama.ai/) for providing the local AI model runtime
 - [Next.js](https://nextjs.org/) for the React framework
 - [Tailwind CSS](https://tailwindcss.com/) for styling
 - [KaTeX](https://katex.org/) for mathematical expression rendering
+
+## About Si4k
+
+SiLynkr is developed and maintained by [Si4k](https://si4k.me), a company focused on creating intuitive AI interfaces and tools. Visit our [website](https://si4k.me) for more information and other products.
         

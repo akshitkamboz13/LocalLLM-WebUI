@@ -1,4 +1,7 @@
+@import "tailwindcss/preflight";
+@tailwind utilities;
 @import "tailwindcss";
+
 
 :root {
   --background: #ffffff;
@@ -51,6 +54,71 @@ body {
 }
 
 /* Custom scrollbar */
+/* Add these animations */
+@keyframes slideUp {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-slideUp {
+  animation: slideUp 0.2s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulseBlue {
+  0%, 100% {
+    background-color: rgba(59, 130, 246, 1);
+  }
+  50% {
+    background-color: rgba(37, 99, 235, 1);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+.animate-fade-out {
+  animation: fadeOut 0.2s ease-in-out;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+.animate-pulse-blue {
+  animation: pulseBlue 2s infinite;
+}
+
+/* Improve scrollbars */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -231,4 +299,233 @@ body {
   font-size: inherit;
 }
 
+/* Auto-resize textarea */
+textarea {
+  min-height: 44px;
+  max-height: 200px;
+  overflow-y: auto;
+}
 
+/* Dark mode styles */
+.dark {
+  color-scheme: dark;
+}
+
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.2s ease-in-out;
+  }
+
+  .animate-fade-out {
+    animation: fadeOut 0.2s ease-in-out;
+  }
+
+  .animate-fade-in-up {
+    animation: fadeInUp 0.3s ease-out;
+  }
+
+  .animate-pulse-blue {
+    animation: pulseBlue 2s infinite;
+  }
+}
+
+@layer base {
+  :root {
+    --primary: 37 99 235;     /* blue-600 */
+    --primary-hover: 29 78 216; /* blue-700 */
+    --primary-content: 255 255 255;
+    
+    --secondary: 148 163 184;  /* slate-400 */
+    --secondary-hover: 100 116 139; /* slate-500 */
+    --secondary-content: 255 255 255;
+    
+    --background: 255 255 255;
+    --foreground: 15 23 42;    /* slate-900 */
+    --card: 248 250 252;       /* slate-50 */
+    --card-foreground: 15 23 42; /* slate-900 */
+    --muted: 241 245 249;      /* slate-100 */
+    --muted-foreground: 100 116 139; /* slate-500 */
+    --border: 226 232 240;     /* slate-200 */
+    
+    --success: 34 197 94;      /* green-500 */
+    --warning: 234 179 8;      /* yellow-500 */
+    --error: 239 68 68;        /* red-500 */
+  }
+  
+  .dark {
+    --primary: 59 130 246;     /* blue-500 */
+    --primary-hover: 37 99 235; /* blue-600 */
+    --primary-content: 255 255 255;
+    
+    --secondary: 51 65 85;     /* slate-700 */
+    --secondary-hover: 71 85 105; /* slate-600 */
+    --secondary-content: 255 255 255;
+    
+    --background: 15 23 42;    /* slate-900 */
+    --foreground: 248 250 252; /* slate-50 */
+    --card: 30 41 59;          /* slate-800 */
+    --card-foreground: 241 245 249; /* slate-100 */
+    --muted: 51 65 85;         /* slate-700 */
+    --muted-foreground: 148 163 184; /* slate-400 */
+    --border: 51 65 85;        /* slate-700 */
+    
+    --success: 34 197 94;      /* green-500 */
+    --warning: 234 179 8;      /* yellow-500 */
+    --error: 239 68 68;        /* red-500 */
+  }
+  
+  .theme-obsidian {
+    --primary: 139 92 246;     /* violet-500 */
+    --primary-hover: 124 58 237; /* violet-600 */
+    --primary-content: 255 255 255;
+    
+    --secondary: 51 65 85;     /* slate-700 */
+    --secondary-hover: 71 85 105; /* slate-600 */
+    --secondary-content: 255 255 255;
+    
+    --background: 0 0 0;       /* black */
+    --foreground: 245 243 255; /* violet-50 */
+    --card: 17 24 39;          /* gray-900 */
+    --card-foreground: 237 233 254; /* violet-100 */
+    --muted: 31 41 55;         /* gray-800 */
+    --muted-foreground: 167 139 250; /* violet-400 */
+    --border: 31 41 55;        /* gray-800 */
+    
+    --success: 16 185 129;     /* emerald-500 */
+    --warning: 217 119 6;      /* amber-600 */
+    --error: 220 38 38;        /* red-600 */
+  }
+  
+  .theme-nature {
+    --primary: 16 185 129;     /* emerald-500 */
+    --primary-hover: 5 150 105; /* emerald-600 */
+    --primary-content: 255 255 255;
+    
+    --secondary: 6 95 70;      /* emerald-800 */
+    --secondary-hover: 4 120 87; /* emerald-700 */
+    --secondary-content: 255 255 255;
+    
+    --background: 6 78 59;     /* emerald-900 */
+    --foreground: 236 253 245; /* emerald-50 */
+    --card: 4 120 87;          /* emerald-700 */
+    --card-foreground: 209 250 229; /* emerald-100 */
+    --muted: 5 150 105;        /* emerald-600 */
+    --muted-foreground: 167 243 208; /* emerald-200 */
+    --border: 4 120 87;        /* emerald-700 */
+    
+    --success: 16 185 129;     /* emerald-500 */
+    --warning: 245 158 11;     /* amber-500 */
+    --error: 239 68 68;        /* red-500 */
+  }
+  
+  .theme-sunset {
+    --primary: 249 115 22;     /* orange-500 */
+    --primary-hover: 234 88 12; /* orange-600 */
+    --primary-content: 255 255 255;
+    
+    --secondary: 154 52 18;    /* orange-800 */
+    --secondary-hover: 194 65 12; /* orange-700 */
+    --secondary-content: 255 255 255;
+    
+    --background: 124 45 18;   /* orange-900 */
+    --foreground: 255 247 237; /* orange-50 */
+    --card: 154 52 18;         /* orange-800 */
+    --card-foreground: 255 237 213; /* orange-100 */
+    --muted: 194 65 12;        /* orange-700 */
+    --muted-foreground: 254 215 170; /* orange-200 */
+    --border: 154 52 18;       /* orange-800 */
+    
+    --success: 16 185 129;     /* emerald-500 */
+    --warning: 234 179 8;      /* yellow-500 */
+    --error: 220 38 38;        /* red-600 */
+  }
+  
+  .theme-custom {
+    --primary: 79 70 229;      /* indigo-600 */
+    --primary-hover: 67 56 202; /* indigo-700 */
+    --primary-content: 255 255 255;
+    
+    --secondary: 124 58 237;   /* violet-600 */
+    --secondary-hover: 109 40 217; /* violet-700 */
+    --secondary-content: 255 255 255;
+    
+    --background: 15 23 42;    /* slate-900 */
+    --foreground: 237 233 254; /* violet-100 */
+    --card: 30 41 59;          /* slate-800 */
+    --card-foreground: 224 231 255; /* indigo-100 */
+    --muted: 51 65 85;         /* slate-700 */
+    --muted-foreground: 165 180 252; /* indigo-300 */
+    --border: 51 65 85;        /* slate-700 */
+    
+    --success: 16 185 129;     /* emerald-500 */
+    --warning: 245 158 11;     /* amber-500 */
+    --error: 239 68 68;        /* red-500 */
+  }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes pulseBlue {
+  0%, 100% {
+    background-color: rgb(var(--primary));
+  }
+  50% {
+    background-color: rgb(var(--primary-hover));
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Custom utilities */
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-in;
+}
+
+.animate-fade-out {
+  animation: fadeOut 0.3s ease-out;
+}
+
+.animate-fade-in-up {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-pulse-blue {
+  animation: pulseBlue 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Add CSS variables support for Tailwind colors */
+.text-primary {
+  color: rgb(var(--primary));
+}
+
+.bg-primary {
+  background-color: rgb(var(--primary));
+}

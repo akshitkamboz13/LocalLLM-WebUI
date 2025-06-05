@@ -7,6 +7,7 @@ import rehypeKatex from 'rehype-katex';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import 'katex/dist/katex.min.css';
+import { User, Bot } from 'lucide-react';
 
 interface ChatMessageProps {
   role: 'user' | 'assistant';
@@ -18,12 +19,19 @@ export default function ChatMessage({ role, content, timestamp }: ChatMessagePro
   const isUser = role === 'user';
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-2`}>
-      <div
-        className={`max-w-[80%] rounded-lg p-4 shadow-md transition-all duration-200
+    <div className={`flex mb-6 ${isUser ? 'justify-end' : 'justify-start'}`}>
+      {!isUser && (
+        <div className="flex-shrink-0 mr-3">
+          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white">
+            <Bot size={18} />
+          </div>
+        </div>
+      )}
+      
+      <div className={`max-w-[80%] rounded-lg p-4 shadow-sm
         ${isUser 
-          ? 'bg-blue-500 text-white rounded-br-none' 
-          : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white rounded-bl-none'}`}
+          ? 'bg-blue-600 text-white' 
+          : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-white'}`}
       >
         <div className="font-semibold mb-1 flex items-center justify-between">
           <span>{isUser ? 'You' : 'AI'}</span>
@@ -79,6 +87,14 @@ export default function ChatMessage({ role, content, timestamp }: ChatMessagePro
           </div>
         )}
       </div>
+      
+      {isUser && (
+        <div className="flex-shrink-0 ml-3">
+          <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center text-gray-700 dark:text-gray-300">
+            <User size={18} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,0 +1,17 @@
+{
+  "serverSettings": {
+    "primaryPort": 49494,
+    "fallbackPorts": [49049, 49994, 51951, 54321, 3006, 6969],
+    "devPort": 3006,
+    "uiTestPort": 6969,
+    "portNames": {
+      "49494": "Primary",
+      "49049": "Fallback #1 (Mirror-style symmetry)",
+      "49994": "Fallback #2 (Maxed out pattern)",
+      "51951": "Fallback #3 (Si4k-inspired)",
+      "54321": "Fallback #4 (Debug/Test)",
+      "3006": "Dev environment",
+      "6969": "UI Testing"
+    }
+  }
+} 
