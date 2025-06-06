@@ -333,9 +333,9 @@ export default function SharedConversationPage() {
         <div className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
           <p>
             Shared via{' '}
-            <a href="/" className="text-blue-600 dark:text-blue-400 hover:underline">
-              Ollama Chat
-            </a>
+            <Link href="https://silynkr.si4k.me/" className="text-blue-600 dark:text-blue-400 hover:underline">
+              SiLynkr
+            </Link>
           </p>
         </div>
       </div>

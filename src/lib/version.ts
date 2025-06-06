@@ -4,7 +4,7 @@
  */
 export const VERSION = {
   major: 1,
-  minor: 0,
+  minor: 1,
   patch: 0,
   label: 'beta',
   get version() {
@@ -23,6 +23,9 @@ export const FEATURES = [
   'Chat with any Ollama model',
   'MongoDB or local storage for conversations',
   'Conversation folders and organization',
+  'Interactive message controls (copy, like, regenerate)',
+  'Message regeneration with model switching',
+  'Response version history navigation',
   'Share conversations with public links',
   'Export conversations as PDF or text',
   'Advanced model parameters',

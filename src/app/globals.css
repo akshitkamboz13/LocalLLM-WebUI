@@ -529,3 +529,108 @@ textarea {
 .bg-primary {
   background-color: rgb(var(--primary));
 }
+
+/* Tooltip styling */
+.tooltip-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tooltip-text {
+  visibility: hidden;
+  position: absolute;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--card-background);
+  color: var(--card-foreground);
+  text-align: center;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.2s, visibility 0.2s;
+  z-index: 30;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border);
+}
+
+.tooltip-container:hover .tooltip-text {
+  visibility: visible;
+  opacity: 1;
+}
+
+/* Add a small arrow to the tooltip */
+.tooltip-text::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -5px;
+  border-width: 5px;
+  border-style: solid;
+  border-color: var(--card-background) transparent transparent transparent;
+}
+
+/* Message action buttons transition */
+.message-actions-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.message-actions-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 200ms, transform 200ms;
+}
+
+/* Message action bar styles */
+.message-actions {
+  transform: translateY(calc(100% + 4px));
+  margin-top: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.message-actions.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(calc(100% + 0px));
+}
+
+/* Add a subtle hover effect for the action buttons */
+.message-action-button {
+  padding: 6px;
+  border-radius: 4px;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.message-action-button:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.dark .message-action-button:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.message-action-button:active {
+  transform: scale(0.95);
+}
+
+/* Version navigation styles */
+.version-navigation {
+  margin-top: 10px;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--muted-foreground);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}

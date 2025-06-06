@@ -4,7 +4,7 @@ import { useState, useEffect, FormEvent, useRef } from 'react';
 import { ModelInfo } from '../../services/ollamaService';
 import ChatMessage from './ChatMessage';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Menu, X, Plus, Settings, Folder as FolderIcon, Tag as TagIcon, Share, Moon, Sun, Database, MessageSquare } from 'lucide-react';
+import { Menu, X, Plus, Settings, Folder as FolderIcon, Tag as TagIcon, Share, Moon, Sun, Database, MessageSquare, AlertCircle } from 'lucide-react';
 import { Message, truncateConversationHistory, createPromptWithHistory } from '@/lib/conversationUtils';
 import ShareDialog from './ShareDialog';
 import SettingsDialog from './SettingsDialog';
@@ -113,6 +113,15 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
     y: 0,
     folder: null
   });
+  
+  // Add new state variables for message versions and editing
+  const [messageVersions, setMessageVersions] = useState<Record<number, string[]>>({});
+  const [currentMessageVersions, setCurrentMessageVersions] = useState<Record<number, number>>({});
+  const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
+  const [feedbackMessages, setFeedbackMessages] = useState<Record<number, 'liked' | 'disliked' | null>>({});
+  
+  // Add new state for version notification
+  const [showVersionNotification, setShowVersionNotification] = useState(true);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -432,33 +441,199 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
 
     fetchModels();
   }, []);
+
+  // Function to regenerate a specific message using a selected model
+  const regenerateMessage = async (messageIndex: number, modelName: string) => {
+    if (messageIndex < 0 || messageIndex >= messages.length || messages[messageIndex].role !== 'assistant') {
+      return;
+    }
+    
+    // Find the user message that preceded this assistant message
+    const userMessageIndex = messageIndex - 1;
+    if (userMessageIndex < 0 || messages[userMessageIndex].role !== 'user') {
+      showToast('Cannot find the user message to regenerate response', 'error');
+      return;
+    }
+    
+    const userMessage = messages[userMessageIndex];
+    
+    // Show loading state
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Get recent conversation history excluding the message we're regenerating
+      const conversationHistory = useConversationHistory 
+        ? truncateConversationHistory(
+            messages.slice(0, userMessageIndex), 
+            historyLength
+          )
+        : [];
+      
+      // Create prompt with conversation history if enabled
+      const promptWithHistory = useConversationHistory
+        ? createPromptWithHistory(userMessage.content, conversationHistory)
+        : userMessage.content;
+      
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: modelName,
+          prompt: promptWithHistory,
+          rawPrompt: userMessage.content, // Original prompt without history
+          system: systemPrompt,
+          options: {
+            temperature,
+            top_p: topP,
+            top_k: topK
+          },
+          suffix: suffixText || undefined,
+          format: formatOption || undefined,
+          template: customTemplate || undefined,
+          think: thinkingEnabled,
+          raw: rawModeEnabled,
+          keep_alive: keepAliveOption,
+          conversationHistory: useConversationHistory ? conversationHistory.map(msg => ({
+            role: msg.role,
+            content: msg.content
+          })) : []
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API error (${response.status}): ${errorText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        setError(data.error);
+      } else {
+        // Create new message with regenerated content
+        const newMessage: Message = {
+          role: 'assistant',
+          content: data.response,
+          timestamp: new Date()
+        };
+        
+        // Store the new version in messageVersions
+        const messageId = messageIndex;
+        const currentVersions = messageVersions[messageId] || [messages[messageIndex].content];
+        const updatedVersions = [...currentVersions, newMessage.content];
+        
+        setMessageVersions({
+          ...messageVersions,
+          [messageId]: updatedVersions
+        });
+        
+        // Set current version to the newest one
+        setCurrentMessageVersions({
+          ...currentMessageVersions,
+          [messageId]: updatedVersions.length - 1
+        });
+        
+        // Update the message in the messages array
+        const updatedMessages = [...messages];
+        updatedMessages[messageIndex] = newMessage;
+        setMessages(updatedMessages);
+        
+        // Track token usage if available
+        if (data.promptTokens || data.completionTokens) {
+          setPromptTokens(data.promptTokens || 0);
+          setCompletionTokens(data.completionTokens || 0);
+          setTotalTokens((data.promptTokens || 0) + (data.completionTokens || 0));
+          
+          // Show token usage briefly
+          setShowTokenUsage(true);
+          setTimeout(() => setShowTokenUsage(false), 5000);
+        }
+        
+        // Mark conversation as unsaved
+        setLastConversationSaved(false);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Failed to regenerate response: ${errorMessage}`);
+      console.error('Error regenerating response:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Handle selecting a specific version of a message
+  const selectMessageVersion = (messageIndex: number, versionIndex: number) => {
+    const messageId = messageIndex;
+    const versions = messageVersions[messageId];
+    
+    if (!versions || versionIndex < 0 || versionIndex >= versions.length) return;
+    
+    // Update current version index
+    setCurrentMessageVersions({
+      ...currentMessageVersions,
+      [messageId]: versionIndex
+    });
+    
+    // Update the message in the messages array
+    const updatedMessages = [...messages];
+    updatedMessages[messageIndex] = {
+      ...updatedMessages[messageIndex],
+      content: versions[versionIndex]
+    };
+    setMessages(updatedMessages);
+    
+    // Mark conversation as unsaved
+    setLastConversationSaved(false);
+  };
+  
+  // Handle user providing feedback on a message
+  const handleMessageFeedback = (messageIndex: number, feedbackType: 'liked' | 'disliked') => {
+    setFeedbackMessages({
+      ...feedbackMessages,
+      [messageIndex]: feedbackType
+    });
+    
+    // Here you could send the feedback to your backend or analytics
+    console.log(`User ${feedbackType} message at index ${messageIndex}`);
+  };
+  
+  // Handle editing a message
+  const startEditingMessage = (messageIndex: number) => {
+    setEditingMessageIndex(messageIndex);
+    // In a full implementation, you'd open a modal or canvas for editing
+    showToast('Editing messages will be available in a future update', 'info');
+  };
+
   // In your handleSubmit function, update to include conversation history
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !selectedModel) return;
-
-    const userMessage: Message = {
-      role: 'user',
+  
+    const userMessage: Message = { 
+      role: 'user', 
       content: input,
-      timestamp: new Date()
+      timestamp: new Date() 
     };
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setLoading(true);
     setError(null);
     setLastConversationSaved(false); // Mark as unsaved when new message is added
-
+  
     try {
       // Get recent conversation history based on settings
-      const conversationHistory = useConversationHistory
+      const conversationHistory = useConversationHistory 
         ? truncateConversationHistory(messages, historyLength)
         : [];
-
-      // Create prompt with conversation history context if enabled
+      
+      // Create prompt with conversation history if enabled
       const promptWithHistory = useConversationHistory
         ? createPromptWithHistory(input, conversationHistory)
         : input;
-
+      
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
@@ -487,13 +662,13 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
           })) : []
         }),
       });
-
+  
       // Check if response is OK before trying to parse JSON
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`API error (${response.status}): ${errorText}`);
       }
-
+  
       // Try to parse the JSON with error handling
       let data;
       try {
@@ -511,21 +686,43 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
           content: data.response,
           timestamp: new Date()
         };
-        setMessages((prev) => [...prev, assistantMessage]);
-
+        
+        // Update messages with new assistant message
+        setMessages((prev) => {
+          const newMessages = [...prev, assistantMessage];
+          
+          // Store the initial version in messageVersions (index is messages.length because we're adding to prev)
+          const messageId = newMessages.length - 1;
+          
+          // Update message versions in a separate effect to avoid state batching issues
+          setTimeout(() => {
+            setMessageVersions(versions => ({
+              ...versions,
+              [messageId]: [assistantMessage.content]
+            }));
+            
+            setCurrentMessageVersions(currentVersions => ({
+              ...currentVersions,
+              [messageId]: 0
+            }));
+          }, 0);
+          
+          return newMessages;
+        });
+        
         // Track token usage if available
         const promptTokens = data.promptTokens || 0;
         const completionTokens = data.completionTokens || 0;
         const totalTokens = promptTokens + completionTokens;
-
+        
         setPromptTokens(promptTokens);
         setCompletionTokens(completionTokens);
         setTotalTokens(totalTokens);
-
+        
         // Show token usage briefly
         setShowTokenUsage(true);
         setTimeout(() => setShowTokenUsage(false), 5000); // Hide after 5 seconds
-
+        
         // Check for auto-save after response received
         checkAutoSave();
       }
@@ -1271,995 +1468,1036 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
   };
 
   return (
-    <div className={`flex h-screen ${darkMode ? 'dark' : ''}`}>
-      {/* Toast notification */}
-      {toast && (
-        <div
-          className={`fixed top-4 right-4 z-50 p-4 rounded-md shadow-lg max-w-sm ${toastFading ? 'animate-fade-out' : 'animate-fade-in'
-            } ${toast.type === 'success' ? 'bg-green-500' :
-              toast.type === 'error' ? 'bg-red-500' :
+    <div className={`flex h-screen flex-col ${darkMode ? 'dark' : ''}`}>
+      {/* New version notification */}
+      {showVersionNotification && (
+        <div className="bg-blue-50 dark:bg-blue-900/30 border-b border-blue-100 dark:border-blue-800">
+          <div className="max-w-7xl mx-auto py-2 px-3 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between flex-wrap">
+              <div className="flex items-center">
+                <span className="flex p-1 rounded-lg bg-blue-100 dark:bg-blue-800">
+                  <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-300" aria-hidden="true" />
+                </span>
+                <p className="ml-3 font-medium text-blue-700 dark:text-blue-300 truncate text-sm">
+                  <span>
+                    New beta version 1.1.0 released with interactive message controls! Try regenerating responses with different models.
+                  </span>
+                </p>
+              </div>
+              <div className="flex-shrink-0 ml-2">
+                <button
+                  type="button"
+                  onClick={() => setShowVersionNotification(false)}
+                  className="p-1.5 rounded-md text-blue-500 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  <span className="sr-only">Dismiss</span>
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main content */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Toast notification */}
+        {toast && (
+          <div 
+            className={`fixed top-4 right-4 z-50 p-4 rounded-md shadow-lg max-w-sm ${toastFading ? 'animate-fade-out' : 'animate-fade-in'
+              } ${toast.type === 'success' ? 'bg-green-500' :
+                toast.type === 'error' ? 'bg-red-500' : 
                 'bg-blue-500'
-            } text-white`}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center mr-3">
-              {toast.type === 'success' && (
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              )}
-              {toast.type === 'error' && (
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              } text-white`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center mr-3">
+                {toast.type === 'success' && (
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+                {toast.type === 'error' && (
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                )}
+                {toast.type === 'info' && (
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+                <span>{toast.message}</span>
+              </div>
+              <button 
+                onClick={dismissToast} 
+                className="text-white hover:text-gray-200 focus:outline-none"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
-              )}
-              {toast.type === 'info' && (
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              )}
-              <span>{toast.message}</span>
-            </div>
-            <button
-              onClick={dismissToast}
-              className="text-white hover:text-gray-200 focus:outline-none"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Sidebar */}
-      <div className={`${sidebarOpen ? 'w-64' : 'w-0 opacity-0'} bg-gray-50 dark:bg-gray-800 border-r dark:border-gray-700 transition-all duration-300 flex flex-col`}>
-        <div className="p-4 border-b dark:border-gray-700 flex items-center justify-between">
-          <div className="flex items-center">
-            <Image
-              src="/Horizontal-SiLynkr-Logo.png"
-              alt="SiLynkr Logo"
-              width={140}
-              height={28}
-              className="h-auto"
-            />
-          </div>
-          <button onClick={() => setSidebarOpen(false)} className="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700">
-            <X size={18} className="text-gray-600 dark:text-gray-300" />
-          </button>
-        </div>
-
-        {/* <button className="m-3 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md transition-colors" 
-          onClick={createNewConversation}
-        >
-          <Plus size={16} />
-          <span>New Chat</span>
-        </button> */}
-
-        <div className="flex-1 overflow-y-auto px-3 space-y-2">
-          {/* Recent Chats Section */}
-          <div className="flex items-center justify-between">
-            <div className="text-sm font-medium text-gray-500 dark:text-gray-400 mt-2 mb-1">Recent Chats</div>
-            <button className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-              onClick={createNewConversation}
-            >
-              <span>+ New Chat</span>
-            </button>
-          </div>
-          {loadingConversations ? (
-            <div className="py-2 flex items-center justify-center">
-              <div className="animate-pulse flex space-x-2">
-                <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
-                <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
-                <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
-              </div>
-            </div>
-          ) : savedConversations.length > 0 ? (
-            <div className="space-y-0.5">
-              {savedConversations
-                .filter(conv => !conv.folderId) // Only show conversations without folders here
-                .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()) // Most recent first
-                .slice(0, 10) // Limit to 10 recent chats
-                .map(conv => (
-                  <button
-                    key={conv._id}
-                    onClick={() => loadConversation(conv)}
-                    onContextMenu={(e) => handleContextMenu(e, conv)}
-                    className={`w-full flex items-center text-left px-2 py-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 ${currentConversationId === conv._id ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'
-                      }`}
-                  >
-                    <MessageSquare size={14} className="mr-2 flex-shrink-0" />
-                    <span className="text-sm truncate">{conv.title}</span>
-                  </button>
-                ))
-              }
-            </div>
-          ) : (
-            <div className="text-xs italic text-gray-500 dark:text-gray-500 px-1 py-1">
-              No saved conversations
-            </div>
-          )}
-          {/* Folders Section */}
-          <div className="flex justify-between items-center mb-1">
-            <div className="text-sm font-medium text-gray-500 dark:text-gray-400">Folders</div>
-            <button
-              onClick={() => setShowNewFolderInput(!showNewFolderInput)}
-              className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-            >
-              + New
-            </button>
-          </div>
-
-          {showNewFolderInput && (
-            <div className="mb-2 flex items-center">
-              <input
-                type="text"
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                placeholder="Folder name"
-                className="flex-1 text-sm border border-gray-300 dark:border-gray-600 rounded-l-md p-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') createFolder();
-                  if (e.key === 'Escape') {
-                    setShowNewFolderInput(false);
-                    setNewFolderName('');
-                  }
-                }}
-              />
-              <button
-                onClick={() => createFolder()}
-                className="bg-blue-600 hover:bg-blue-700 text-white p-1 rounded-r-md text-sm"
-              >
-                Create
               </button>
             </div>
-          )}
-
-          {loadingConversations ? (
-            <div className="py-2 flex items-center justify-center">
-              <div className="animate-pulse flex space-x-2">
-                <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
-                <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
-                <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
-              </div>
-            </div>
-          ) : folders.length > 0 ? (
-            <div className="space-y-1">
-              {/* Use our hierarchical folder structure */}
-              {(() => {
-                const { rootFolders, childFolders } = getFolderHierarchy(folders);
-                return rootFolders.map(folder => (
-                  <RenderFolder
-                    key={folder._id}
-                    folder={folder}
-                    childFolders={childFolders}
-                  />
-                ));
-              })()}
-            </div>
-          ) : (
-            <div className="text-xs italic text-gray-500 dark:text-gray-500 px-1 py-1">
-              No folders yet
-            </div>
-          )}
-
-
-        </div>
-
-        <div className="p-3 border-t dark:border-gray-700">
-          <button className="w-full flex items-center gap-2 py-2 px-3 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300" onClick={() => setShowSettings(true)}>
-            <Settings size={16} />
-            <span>Settings</span>
-          </button>
-          <button className="w-full flex items-center gap-2 py-2 px-3 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 " onClick={saveConversation}>
-            <FolderIcon size={16} />
-            <span>Save Conversation</span>
-          </button>
-          <button className="w-full flex items-center py-2 px-3 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300" onClick={shareConversation}>
-            <Share size={16} />
-            <span>{isShared ? 'Unshare Conversation' : 'Share Conversation'}</span>
-          </button>
-          <div className="text-center text-xs text-gray-500 dark:text-gray-400">
-            <div className="flex flex-col items-center justify-center gap-1">
-              <div>
-                SiLynkr {getVersionString()} by <a href="https://si4k.me" target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-500">Si4k</a>
-              </div>
-            </div>
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* Main Content - Center properly when sidebar is closed */}
-      <div className={`flex-1 flex flex-col transition-all duration-300 ${!sidebarOpen ? 'ml-0 w-full' : ''}`}>
-        {/* Header */}
-        <div className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 py-2">
-          <div className={`${!sidebarOpen ? 'container mx-auto px-4' : 'px-4'} flex items-center justify-between`}>
-            {!sidebarOpen && (
-              <div className="flex items-center">
-                <button onClick={() => setSidebarOpen(true)} className="p-2 mr-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700">
-                  <Menu size={20} className="text-gray-600 dark:text-gray-300" />
-                </button>
-                <Image
-                  src="/Horizontal-SiLynkr-Logo.png"
-                  alt="SiLynkr Logo"
-                  width={120}
-                  height={24}
-                  className="h-auto"
-                />
+        {/* Sidebar */}
+        <div className={`${sidebarOpen ? 'w-64' : 'w-0 opacity-0'} bg-gray-50 dark:bg-gray-800 border-r dark:border-gray-700 transition-all duration-300 flex flex-col`}>
+          <div className="p-4 border-b dark:border-gray-700 flex items-center justify-between">
+            <div className="flex items-center">
+              <Image
+                src="/Horizontal-SiLynkr-Logo.png"
+                alt="SiLynkr Logo"
+                width={140}
+                height={28}
+                className="h-auto"
+              />
+            </div>
+            <button onClick={() => setSidebarOpen(false)} className="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700">
+              <X size={18} className="text-gray-600 dark:text-gray-300" />
+            </button>
+          </div>
+
+          {/* <button className="m-3 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md transition-colors" 
+            onClick={createNewConversation}
+          >
+            <Plus size={16} />
+            <span>New Chat</span>
+          </button> */}
+
+          <div className="flex-1 overflow-y-auto px-3 space-y-2">
+            {/* Recent Chats Section */}
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium text-gray-500 dark:text-gray-400 mt-2 mb-1">Recent Chats</div>
+              <button className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                onClick={createNewConversation}
+              >
+                <span>+ New Chat</span>
+              </button>
+            </div>
+            {loadingConversations ? (
+              <div className="py-2 flex items-center justify-center">
+                <div className="animate-pulse flex space-x-2">
+                  <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
+                  <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
+                  <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
+                </div>
+              </div>
+            ) : savedConversations.length > 0 ? (
+              <div className="space-y-0.5">
+                {savedConversations
+                  .filter(conv => !conv.folderId) // Only show conversations without folders here
+                  .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()) // Most recent first
+                  .slice(0, 10) // Limit to 10 recent chats
+                  .map(conv => (
+                    <button
+                      key={conv._id}
+                      onClick={() => loadConversation(conv)}
+                      onContextMenu={(e) => handleContextMenu(e, conv)}
+                      className={`w-full flex items-center text-left px-2 py-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 ${currentConversationId === conv._id ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'
+                        }`}
+                    >
+                      <MessageSquare size={14} className="mr-2 flex-shrink-0" />
+                      <span className="text-sm truncate">{conv.title}</span>
+                    </button>
+                  ))
+                }
+              </div>
+            ) : (
+              <div className="text-xs italic text-gray-500 dark:text-gray-500 px-1 py-1">
+                No saved conversations
               </div>
             )}
-            <div className={`${!sidebarOpen ? 'flex-1 flex justify-center' : 'flex-1 flex justify-center flex-col items-center'}`}>
-              {!showSettings && (
-                <div className="relative w-full max-w-2xl mx-auto">
-                  <select
-                    id="model-select"
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    className="w-full p-2 pl-4 pr-10 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    disabled={loading}
-                  >
-                    {models.length === 0 && (
-                      <option value="">No models available</option>
-                    )}
-                    {models.map((model) => (
-                      <option key={model.name} value={model.name}>
-                        {model.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {showSettings && (
-                <h1 className="text-xl font-medium text-gray-900 dark:text-white">SiLynkr Settings</h1>
-              )}
+            {/* Folders Section */}
+            <div className="flex justify-between items-center mb-1">
+              <div className="text-sm font-medium text-gray-500 dark:text-gray-400">Folders</div>
+              <button
+                onClick={() => setShowNewFolderInput(!showNewFolderInput)}
+                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                + New
+              </button>
             </div>
 
-            <button
-              onClick={() => setAppTheme(theme === 'light' ? 'dark' : 'light')}
-              className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
-            >
-              {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+            {showNewFolderInput && (
+              <div className="mb-2 flex items-center">
+                <input
+                  type="text"
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  placeholder="Folder name"
+                  className="flex-1 text-sm border border-gray-300 dark:border-gray-600 rounded-l-md p-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') createFolder();
+                    if (e.key === 'Escape') {
+                      setShowNewFolderInput(false);
+                      setNewFolderName('');
+                    }
+                  }}
+                />
+                <button
+                  onClick={() => createFolder()}
+                  className="bg-blue-600 hover:bg-blue-700 text-white p-1 rounded-r-md text-sm"
+                >
+                  Create
+                </button>
+              </div>
+            )}
+
+            {loadingConversations ? (
+              <div className="py-2 flex items-center justify-center">
+                <div className="animate-pulse flex space-x-2">
+                  <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
+                  <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
+                  <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
+                </div>
+              </div>
+            ) : folders.length > 0 ? (
+              <div className="space-y-1">
+                {/* Use our hierarchical folder structure */}
+                {(() => {
+                  const { rootFolders, childFolders } = getFolderHierarchy(folders);
+                  return rootFolders.map(folder => (
+                    <RenderFolder
+                      key={folder._id}
+                      folder={folder}
+                      childFolders={childFolders}
+                    />
+                  ));
+                })()}
+              </div>
+            ) : (
+              <div className="text-xs italic text-gray-500 dark:text-gray-500 px-1 py-1">
+                No folders yet
+              </div>
+            )}
+
+
+          </div>
+
+          <div className="p-3 border-t dark:border-gray-700">
+            <button className="w-full flex items-center gap-2 py-2 px-3 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300" onClick={() => setShowSettings(true)}>
+              <Settings size={16} />
+              <span>Settings</span>
             </button>
+            <button className="w-full flex items-center gap-2 py-2 px-3 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 " onClick={saveConversation}>
+              <FolderIcon size={16} />
+              <span>Save Conversation</span>
+            </button>
+            <button className="w-full flex items-center gap-2 py-2 px-3 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300" onClick={shareConversation}>
+              <Share size={16} />
+              <span>{isShared ? 'Unshare Conversation' : 'Share Conversation'}</span>
+            </button>
+            <div className="text-center text-xs text-gray-500 dark:text-gray-400">
+              <div className="flex flex-col items-center justify-center gap-1">
+                <div>
+                  SiLynkr {getVersionString()} by <a href="https://si4k.me" target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-500">Si4k</a>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Chat Area */}
-        <div className="flex-1 overflow-hidden bg-gray-50 dark:bg-gray-900 flex flex-col">
-          {showSettings ? (
-            /* Settings View */
-            <div className="flex-1 overflow-y-auto">
-              <div className={`${!sidebarOpen ? 'container mx-auto px-4' : ''} max-w-3xl mx-auto py-8 px-4`}>
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <Settings size={24} />
-                    Settings
-                  </h2>
-                  <button
-                    onClick={() => setShowSettings(false)}
-                    className="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
-                  >
-                    <X size={20} />
+        {/* Main Content - Center properly when sidebar is closed */}
+        <div className={`flex-1 flex flex-col transition-all duration-300 ${!sidebarOpen ? 'ml-0 w-full' : ''}`}>
+          {/* Header */}
+          <div className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 py-2">
+            <div className={`${!sidebarOpen ? 'container mx-auto px-4' : 'px-4'} flex items-center justify-between`}>
+              {!sidebarOpen && (
+                <div className="flex items-center">
+                  <button onClick={() => setSidebarOpen(true)} className="p-2 mr-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700">
+                    <Menu size={20} className="text-gray-600 dark:text-gray-300" />
                   </button>
-                </div>
-
-                <div className="flex flex-col md:flex-row gap-6">
-                  {/* Settings navigation */}
-                  <div className="md:w-64 shrink-0">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-                      <button
-                        className={`w-full text-left px-4 py-3 border-l-4 ${settingsView === 'general' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700'}`}
-                        onClick={() => setSettingsView('general')}
-                      >
-                        General
-                      </button>
-                      <button
-                        className={`w-full text-left px-4 py-3 border-l-4 ${settingsView === 'advanced' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700'}`}
-                        onClick={() => setSettingsView('advanced')}
-                      >
-                        Advanced Options
-                      </button>
-                      <button
-                        className={`w-full text-left px-4 py-3 border-l-4 ${settingsView === 'appearance' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700'}`}
-                        onClick={() => setSettingsView('appearance')}
-                      >
-                        Appearance
-                      </button>
-                      <button
-                        className={`w-full text-left px-4 py-3 border-l-4 ${settingsView === 'updates' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700'}`}
-                        onClick={() => setSettingsView('updates')}
-                      >
-                        Updates
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Settings content */}
-                  <div className="flex-1 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">
-                    {/* General Settings */}
-                    {settingsView === 'general' && (
-                      <div className="space-y-6">
-                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">General Settings</h3>
-
-                        {/* System Prompt */}
-                        <div>
-                          <label htmlFor="systemPrompt" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            System Prompt
-                          </label>
-                          <textarea
-                            id="systemPrompt"
-                            rows={3}
-                            value={systemPrompt}
-                            onChange={(e) => setSystemPrompt(e.target.value)}
-                            className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                            placeholder="Optional system prompt to guide the assistant's responses"
-                          />
-                          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                            System prompt provides context to the model about how it should respond.
-                          </p>
-                        </div>
-
-                        {/* MongoDB Connection */}
-                        <div>
-                          <label htmlFor="mongodb-uri" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            MongoDB Connection URI
-                          </label>
-                          <div className="flex gap-2">
-                            <input
-                              id="mongodb-uri"
-                              type="text"
-                              value={mongodbUri}
-                              onChange={(e) => setMongodbUri(e.target.value)}
-                              className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                              placeholder="mongodb://username:password@host:port/database"
-                            />
-                            <button
-                              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm"
-                              onClick={saveMongoDbUri}
-                            >
-                              Save
-                            </button>
-                          </div>
-                          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                            <span>{usingLocalStorage ? 'Using local storage' : 'Connected to MongoDB'}</span>
-                            <span className={`w-2 h-2 rounded-full ${usingLocalStorage ? 'bg-amber-500' : 'bg-green-500'}`}></span>
-                          </p>
-                        </div>
-
-                        {/* Auto-save Settings */}
-                        <div>
-                          <div className="flex items-center">
-                            <input
-                              id="autosave"
-                              type="checkbox"
-                              checked={autoSave}
-                              onChange={(e) => setAutoSave(e.target.checked)}
-                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                            />
-                            <label htmlFor="autosave" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
-                              Auto-save conversations after each response
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Advanced Settings */}
-                    {settingsView === 'advanced' && (
-                      <div className="space-y-6">
-                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">Advanced Options</h3>
-
-                        {/* Temperature */}
-                        <div>
-                          <label htmlFor="temperature" className="flex justify-between text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            <span>Temperature</span>
-                            <span className="text-gray-500 dark:text-gray-400">{temperature}</span>
-                          </label>
-                          <input
-                            id="temperature"
-                            type="range"
-                            min="0"
-                            max="2"
-                            step="0.1"
-                            value={temperature}
-                            onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                            className="w-full"
-                          />
-                          <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-                            <span>Precise (0)</span>
-                            <span>Balanced (0.7)</span>
-                            <span>Creative (2)</span>
-                          </div>
-                        </div>
-
-                        {/* Top-P */}
-                        <div>
-                          <label htmlFor="top-p" className="flex justify-between text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            <span>Top-P</span>
-                            <span className="text-gray-500 dark:text-gray-400">{topP}</span>
-                          </label>
-                          <input
-                            id="top-p"
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.05"
-                            value={topP}
-                            onChange={(e) => setTopP(parseFloat(e.target.value))}
-                            className="w-full"
-                          />
-                        </div>
-
-                        {/* Top-K */}
-                        <div>
-                          <label htmlFor="top-k" className="flex justify-between text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            <span>Top-K</span>
-                            <span className="text-gray-500 dark:text-gray-400">{topK}</span>
-                          </label>
-                          <input
-                            id="top-k"
-                            type="range"
-                            min="0"
-                            max="100"
-                            step="1"
-                            value={topK}
-                            onChange={(e) => setTopK(parseInt(e.target.value))}
-                            className="w-full"
-                          />
-                        </div>
-
-                        {/* Format Option */}
-                        <div>
-                          <label htmlFor="format" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Response Format
-                          </label>
-                          <select
-                            id="format"
-                            value={formatOption}
-                            onChange={(e) => setFormatOption(e.target.value)}
-                            className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                          >
-                            <option value="">Default</option>
-                            <option value="json">JSON</option>
-                          </select>
-                        </div>
-
-                        {/* Suffix Text */}
-                        <div>
-                          <label htmlFor="suffix" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Suffix Text
-                          </label>
-                          <input
-                            id="suffix"
-                            type="text"
-                            value={suffixText}
-                            onChange={(e) => setSuffixText(e.target.value)}
-                            className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                            placeholder="Optional suffix to append to prompt"
-                          />
-                        </div>
-
-                        {/* Keep-Alive */}
-                        <div>
-                          <label htmlFor="keep-alive" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Keep-Alive Duration
-                          </label>
-                          <select
-                            id="keep-alive"
-                            value={keepAliveOption}
-                            onChange={(e) => setKeepAliveOption(e.target.value)}
-                            className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                          >
-                            <option value="0s">None</option>
-                            <option value="30s">30 seconds</option>
-                            <option value="1m">1 minute</option>
-                            <option value="5m">5 minutes</option>
-                            <option value="15m">15 minutes</option>
-                            <option value="30m">30 minutes</option>
-                            <option value="1h">1 hour</option>
-                          </select>
-                        </div>
-
-                        {/* Checkboxes */}
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center">
-                            <input
-                              id="thinking-mode"
-                              type="checkbox"
-                              checked={thinkingEnabled}
-                              onChange={(e) => setThinkingEnabled(e.target.checked)}
-                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                            />
-                            <label htmlFor="thinking-mode" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
-                              Enable thinking mode
-                            </label>
-                          </div>
-
-                          <div className="flex items-center">
-                            <input
-                              id="raw-mode"
-                              type="checkbox"
-                              checked={rawModeEnabled}
-                              onChange={(e) => setRawModeEnabled(e.target.checked)}
-                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                            />
-                            <label htmlFor="raw-mode" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
-                              Enable raw mode
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Appearance Settings */}
-                    {settingsView === 'appearance' && (
-                      <div className="space-y-8">
-                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">Appearance</h3>
-
-                        {/* Theme Selector */}
-                        <div>
-                          <h4 className="text-base font-medium text-gray-800 dark:text-gray-200 mb-4">Select Theme</h4>
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                            {/* Light Theme */}
-                            <div
-                              className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'light' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                                }`}
-                              onClick={() => setAppTheme('light')}
-                            >
-                              <div className="bg-white p-2 border-b border-gray-200">
-                                <div className="flex items-center gap-1">
-                                  <div className="w-2 h-2 rounded-full bg-gray-300"></div>
-                                  <div className="w-12 h-2 bg-gray-200 rounded"></div>
-                                </div>
-                              </div>
-                              <div className="bg-gray-50 p-2 h-20 flex flex-col">
-                                <div className="w-3/4 h-2 bg-gray-200 rounded mb-1"></div>
-                                <div className="w-1/2 h-2 bg-gray-200 rounded"></div>
-                                <div className="flex-1"></div>
-                                <div className="w-full h-4 bg-white border border-gray-200 rounded"></div>
-                              </div>
-                              <div className="p-2 bg-white text-center text-xs font-medium text-gray-600">
-                                Light
-                              </div>
-                            </div>
-
-                            {/* Dark Theme */}
-                            <div
-                              className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'dark' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                                }`}
-                              onClick={() => setAppTheme('dark')}
-                            >
-                              <div className="bg-gray-900 p-2 border-b border-gray-700">
-                                <div className="flex items-center gap-1">
-                                  <div className="w-2 h-2 rounded-full bg-gray-600"></div>
-                                  <div className="w-12 h-2 bg-gray-700 rounded"></div>
-                                </div>
-                              </div>
-                              <div className="bg-gray-800 p-2 h-20 flex flex-col">
-                                <div className="w-3/4 h-2 bg-gray-700 rounded mb-1"></div>
-                                <div className="w-1/2 h-2 bg-gray-700 rounded"></div>
-                                <div className="flex-1"></div>
-                                <div className="w-full h-4 bg-gray-900 border border-gray-700 rounded"></div>
-                              </div>
-                              <div className="p-2 bg-gray-900 text-center text-xs font-medium text-gray-300">
-                                Dark
-                              </div>
-                            </div>
-
-                            {/* Obsidian Theme */}
-                            <div
-                              className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'obsidian' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                                }`}
-                              onClick={() => setAppTheme('obsidian')}
-                            >
-                              <div className="bg-black p-2 border-b border-gray-800">
-                                <div className="flex items-center gap-1">
-                                  <div className="w-2 h-2 rounded-full bg-purple-700"></div>
-                                  <div className="w-12 h-2 bg-gray-800 rounded"></div>
-                                </div>
-                              </div>
-                              <div className="bg-gray-900 p-2 h-20 flex flex-col">
-                                <div className="w-3/4 h-2 bg-purple-900/50 rounded mb-1"></div>
-                                <div className="w-1/2 h-2 bg-purple-900/50 rounded"></div>
-                                <div className="flex-1"></div>
-                                <div className="w-full h-4 bg-black border border-gray-800 rounded"></div>
-                              </div>
-                              <div className="p-2 bg-black text-center text-xs font-medium text-purple-300">
-                                Obsidian
-                              </div>
-                            </div>
-
-                            {/* Nature Theme */}
-                            <div
-                              className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'nature' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                                }`}
-                              onClick={() => setAppTheme('nature')}
-                            >
-                              <div className="bg-green-900 p-2 border-b border-green-800">
-                                <div className="flex items-center gap-1">
-                                  <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                                  <div className="w-12 h-2 bg-green-800/70 rounded"></div>
-                                </div>
-                              </div>
-                              <div className="bg-green-800 p-2 h-20 flex flex-col">
-                                <div className="w-3/4 h-2 bg-green-700/50 rounded mb-1"></div>
-                                <div className="w-1/2 h-2 bg-green-700/50 rounded"></div>
-                                <div className="flex-1"></div>
-                                <div className="w-full h-4 bg-green-900 border border-green-700/50 rounded"></div>
-                              </div>
-                              <div className="p-2 bg-green-900 text-center text-xs font-medium text-green-100">
-                                Nature
-                              </div>
-                            </div>
-
-                            {/* Sunset Theme */}
-                            <div
-                              className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'sunset' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                                }`}
-                              onClick={() => setAppTheme('sunset')}
-                            >
-                              <div className="bg-gradient-to-r from-red-800 to-orange-700 p-2 border-b border-orange-900">
-                                <div className="flex items-center gap-1">
-                                  <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
-                                  <div className="w-12 h-2 bg-orange-800/70 rounded"></div>
-                                </div>
-                              </div>
-                              <div className="bg-gradient-to-b from-orange-900 to-orange-950 p-2 h-20 flex flex-col">
-                                <div className="w-3/4 h-2 bg-orange-700/50 rounded mb-1"></div>
-                                <div className="w-1/2 h-2 bg-orange-700/50 rounded"></div>
-                                <div className="flex-1"></div>
-                                <div className="w-full h-4 bg-orange-950 border border-orange-800 rounded"></div>
-                              </div>
-                              <div className="p-2 bg-orange-950 text-center text-xs font-medium text-orange-100">
-                                Sunset
-                              </div>
-                            </div>
-
-                            {/* Custom Theme (Placeholder) */}
-                            <div
-                              className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'custom' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                                }`}
-                              onClick={() => setAppTheme('custom')}
-                            >
-                              <div className="bg-gradient-to-r from-blue-700 via-purple-700 to-pink-700 p-2">
-                                <div className="flex items-center gap-1">
-                                  <div className="w-2 h-2 rounded-full bg-white"></div>
-                                  <div className="w-12 h-2 bg-white/30 rounded"></div>
-                                </div>
-                              </div>
-                              <div className="p-2 h-20 flex flex-col bg-gradient-to-b from-slate-900 to-slate-800">
-                                <div className="w-3/4 h-2 bg-blue-500/30 rounded mb-1"></div>
-                                <div className="w-1/2 h-2 bg-purple-500/30 rounded"></div>
-                                <div className="flex-1"></div>
-                                <div className="w-full h-4 bg-slate-900 border border-slate-700 rounded"></div>
-                              </div>
-                              <div className="p-2 bg-slate-900 text-center text-xs font-medium text-blue-100">
-                                Custom
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* UI Density */}
-                        <div className="space-y-3">
-                          <h4 className="text-base font-medium text-gray-800 dark:text-gray-200">UI Density</h4>
-                          <div className="flex space-x-4">
-                            <button className="px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-md text-sm font-medium">
-                              Comfortable
-                            </button>
-                            <button className="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 text-sm">
-                              Compact
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Font Size */}
-                        <div className="space-y-3">
-                          <div className="flex justify-between">
-                            <h4 className="text-base font-medium text-gray-800 dark:text-gray-200">Font Size</h4>
-                            <span className="text-sm text-gray-500 dark:text-gray-400">Medium</span>
-                          </div>
-                          <input
-                            type="range"
-                            min="1"
-                            max="5"
-                            step="1"
-                            defaultValue="3"
-                            className="w-full"
-                          />
-                          <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-                            <span>Small</span>
-                            <span>Medium</span>
-                            <span>Large</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Updates */}
-                    {settingsView === 'updates' && (
-                      <div className="space-y-6">
-                        <h3 className="text-lg font-medium text-gray-900 dark:text-white">Updates</h3>
-
-                        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md">
-                          <div className="flex items-start">
-                            <div className="mr-3 flex-shrink-0 text-blue-500">
-                              <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
-                              </svg>
-                            </div>
-                            <div>
-                              <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300">Current Version</h4>
-                              <div className="mt-1 text-sm text-blue-700 dark:text-blue-400">
-                                SiLynkr {getVersionString()}
-                                <span className="ml-2 text-xs bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 py-0.5 px-1.5 rounded">Up to date</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
-                          <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                            Update History
-                          </div>
-                          <div className="p-4 space-y-4">
-                            <div>
-                              <h4 className="text-sm font-medium text-gray-900 dark:text-white">Version 1.0.0-beta</h4>
-                              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Released on April 15, 2023</p>
-                              <ul className="mt-2 text-sm text-gray-600 dark:text-gray-400 space-y-1 list-disc list-inside">
-                                <li>Initial release</li>
-                                <li>Support for Ollama models</li>
-                                <li>Conversation management</li>
-                                <li>Dark mode support</li>
-                              </ul>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* Chat Messages */
-            <div className="flex-1 overflow-y-auto p-4" style={{ scrollBehavior: 'smooth' }}>
-              <div className={`${!sidebarOpen ? 'container mx-auto px-4' : ''}`}>
-                {messages.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center p-6">
-                    <div className="w-16 h-16 mb-4 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
-                      <svg className="w-8 h-8 text-blue-600 dark:text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">Start a conversation</h3>
-                    <p className="text-gray-500 dark:text-gray-400 max-w-md">
-                      Ask questions, get creative responses, or explore what your local AI model can do.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-6 max-w-4xl mx-auto w-full">
-                    {messages.map((message, index) => (
-                      <ChatMessage
-                        key={index}
-                        role={message.role}
-                        content={message.content}
-                        timestamp={message.timestamp}
-                      />
-                    ))}
-                    <div ref={messagesEndRef} />
-                  </div>
-                )}
-                {loading && (
-                  <div className="flex items-center justify-center py-4">
-                    <div className="animate-pulse flex space-x-2">
-                      <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
-                      <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
-                      <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
-                      <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
-                      <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Input Area - only show when not in settings view */}
-          {!showSettings && (
-            <div className="border-t dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
-              <form onSubmit={handleSubmit} className={`${!sidebarOpen ? 'container mx-auto' : ''} max-w-3xl mx-auto`}>
-                <div className="relative">
-                  <textarea
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        if (input.trim() && !loading) handleSubmit(e);
-                      }
-                    }}
-                    placeholder="Message SiLynkr..."
-                    rows={1}
-                    className="w-full p-3 pr-24 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none overflow-hidden"
-                    disabled={loading}
+                  <Image
+                    src="/Horizontal-SiLynkr-Logo.png"
+                    alt="SiLynkr Logo"
+                    width={120}
+                    height={24}
+                    className="h-auto"
                   />
-                  <div className="absolute right-2 bottom-2 flex items-center space-x-1">
-                    <button
-                      type="submit"
-                      className="bg-blue-600 hover:bg-blue-700 text-white p-1.5 rounded-md transition-colors flex items-center justify-center disabled:bg-blue-400 dark:disabled:bg-blue-800 disabled:cursor-not-allowed"
-                      disabled={loading || !selectedModel || !input.trim()}
+                </div>
+              )}
+              <div className={`${!sidebarOpen ? 'flex-1 flex justify-center' : 'flex-1 flex justify-center flex-col items-center'}`}>
+                {!showSettings && (
+                  <div className="relative w-full max-w-2xl mx-auto">
+                    <select
+                      id="model-select"
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      className="w-full p-2 pl-4 pr-10 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      disabled={loading}
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-                      </svg>
+                      {models.length === 0 && (
+                        <option value="">No models available</option>
+                      )}
+                      {models.map((model) => (
+                        <option key={model.name} value={model.name}>
+                          {model.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {showSettings && (
+                  <h1 className="text-xl font-medium text-gray-900 dark:text-white">SiLynkr Settings</h1>
+                )}
+              </div>
+
+              <button
+                onClick={() => setAppTheme(theme === 'light' ? 'dark' : 'light')}
+                className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
+              >
+                {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+              </button>
+            </div>
+          </div>
+
+          {/* Chat Area */}
+          <div className="flex-1 overflow-hidden bg-gray-50 dark:bg-gray-900 flex flex-col">
+            {showSettings ? (
+              /* Settings View */
+              <div className="flex-1 overflow-y-auto">
+                <div className={`${!sidebarOpen ? 'container mx-auto px-4' : ''} max-w-3xl mx-auto py-8 px-4`}>
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                      <Settings size={24} />
+                      Settings
+                    </h2>
+                    <button
+                      onClick={() => setShowSettings(false)}
+                      className="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
+                    >
+                      <X size={20} />
                     </button>
-                    <div>
-                      <div className="flex flex-col items-center justify-center gap-1 m-2">
-                        <SaveIndicator />
-                        <PortIndicator />
+                  </div>
+
+                  <div className="flex flex-col md:flex-row gap-6">
+                    {/* Settings navigation */}
+                    <div className="md:w-64 shrink-0">
+                      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+                        <button
+                          className={`w-full text-left px-4 py-3 border-l-4 ${settingsView === 'general' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                          onClick={() => setSettingsView('general')}
+                        >
+                          General
+                        </button>
+                        <button
+                          className={`w-full text-left px-4 py-3 border-l-4 ${settingsView === 'advanced' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                          onClick={() => setSettingsView('advanced')}
+                        >
+                          Advanced Options
+                        </button>
+                        <button
+                          className={`w-full text-left px-4 py-3 border-l-4 ${settingsView === 'appearance' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                          onClick={() => setSettingsView('appearance')}
+                        >
+                          Appearance
+                        </button>
+                        <button
+                          className={`w-full text-left px-4 py-3 border-l-4 ${settingsView === 'updates' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                          onClick={() => setSettingsView('updates')}
+                        >
+                          Updates
+                        </button>
                       </div>
+                    </div>
+
+                    {/* Settings content */}
+                    <div className="flex-1 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+                      {/* General Settings */}
+                      {settingsView === 'general' && (
+                        <div className="space-y-6">
+                          <h3 className="text-lg font-medium text-gray-900 dark:text-white">General Settings</h3>
+
+                          {/* System Prompt */}
+                          <div>
+                            <label htmlFor="systemPrompt" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              System Prompt
+                            </label>
+                            <textarea
+                              id="systemPrompt"
+                              rows={3}
+                              value={systemPrompt}
+                              onChange={(e) => setSystemPrompt(e.target.value)}
+                              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              placeholder="Optional system prompt to guide the assistant's responses"
+                            />
+                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                              System prompt provides context to the model about how it should respond.
+                            </p>
+                          </div>
+
+                          {/* MongoDB Connection */}
+                          <div>
+                            <label htmlFor="mongodb-uri" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              MongoDB Connection URI
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                id="mongodb-uri"
+                                type="text"
+                                value={mongodbUri}
+                                onChange={(e) => setMongodbUri(e.target.value)}
+                                className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                placeholder="mongodb://username:password@host:port/database"
+                              />
+                              <button
+                                className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm"
+                                onClick={saveMongoDbUri}
+                              >
+                                Save
+                              </button>
+                            </div>
+                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                              <span>{usingLocalStorage ? 'Using local storage' : 'Connected to MongoDB'}</span>
+                              <span className={`w-2 h-2 rounded-full ${usingLocalStorage ? 'bg-amber-500' : 'bg-green-500'}`}></span>
+                            </p>
+                          </div>
+
+                          {/* Auto-save Settings */}
+                          <div>
+                            <div className="flex items-center">
+                              <input
+                                id="autosave"
+                                type="checkbox"
+                                checked={autoSave}
+                                onChange={(e) => setAutoSave(e.target.checked)}
+                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                              />
+                              <label htmlFor="autosave" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                                Auto-save conversations after each response
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Advanced Settings */}
+                      {settingsView === 'advanced' && (
+                        <div className="space-y-6">
+                          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Advanced Options</h3>
+
+                          {/* Temperature */}
+                          <div>
+                            <label htmlFor="temperature" className="flex justify-between text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              <span>Temperature</span>
+                              <span className="text-gray-500 dark:text-gray-400">{temperature}</span>
+                            </label>
+                            <input
+                              id="temperature"
+                              type="range"
+                              min="0"
+                              max="2"
+                              step="0.1"
+                              value={temperature}
+                              onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                              className="w-full"
+                            />
+                            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+                              <span>Precise (0)</span>
+                              <span>Balanced (0.7)</span>
+                              <span>Creative (2)</span>
+                            </div>
+                          </div>
+
+                          {/* Top-P */}
+                          <div>
+                            <label htmlFor="top-p" className="flex justify-between text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              <span>Top-P</span>
+                              <span className="text-gray-500 dark:text-gray-400">{topP}</span>
+                            </label>
+                            <input
+                              id="top-p"
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value={topP}
+                              onChange={(e) => setTopP(parseFloat(e.target.value))}
+                              className="w-full"
+                            />
+                          </div>
+
+                          {/* Top-K */}
+                          <div>
+                            <label htmlFor="top-k" className="flex justify-between text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              <span>Top-K</span>
+                              <span className="text-gray-500 dark:text-gray-400">{topK}</span>
+                            </label>
+                            <input
+                              id="top-k"
+                              type="range"
+                              min="0"
+                              max="100"
+                              step="1"
+                              value={topK}
+                              onChange={(e) => setTopK(parseInt(e.target.value))}
+                              className="w-full"
+                            />
+                          </div>
+
+                          {/* Format Option */}
+                          <div>
+                            <label htmlFor="format" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              Response Format
+                            </label>
+                            <select
+                              id="format"
+                              value={formatOption}
+                              onChange={(e) => setFormatOption(e.target.value)}
+                              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            >
+                              <option value="">Default</option>
+                              <option value="json">JSON</option>
+                            </select>
+                          </div>
+
+                          {/* Suffix Text */}
+                          <div>
+                            <label htmlFor="suffix" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              Suffix Text
+                            </label>
+                            <input
+                              id="suffix"
+                              type="text"
+                              value={suffixText}
+                              onChange={(e) => setSuffixText(e.target.value)}
+                              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              placeholder="Optional suffix to append to prompt"
+                            />
+                          </div>
+
+                          {/* Keep-Alive */}
+                          <div>
+                            <label htmlFor="keep-alive" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              Keep-Alive Duration
+                            </label>
+                            <select
+                              id="keep-alive"
+                              value={keepAliveOption}
+                              onChange={(e) => setKeepAliveOption(e.target.value)}
+                              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            >
+                              <option value="0s">None</option>
+                              <option value="30s">30 seconds</option>
+                              <option value="1m">1 minute</option>
+                              <option value="5m">5 minutes</option>
+                              <option value="15m">15 minutes</option>
+                              <option value="30m">30 minutes</option>
+                              <option value="1h">1 hour</option>
+                            </select>
+                          </div>
+
+                          {/* Checkboxes */}
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-center">
+                              <input
+                                id="thinking-mode"
+                                type="checkbox"
+                                checked={thinkingEnabled}
+                                onChange={(e) => setThinkingEnabled(e.target.checked)}
+                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                              />
+                              <label htmlFor="thinking-mode" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                                Enable thinking mode
+                              </label>
+                            </div>
+
+                            <div className="flex items-center">
+                              <input
+                                id="raw-mode"
+                                type="checkbox"
+                                checked={rawModeEnabled}
+                                onChange={(e) => setRawModeEnabled(e.target.checked)}
+                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                              />
+                              <label htmlFor="raw-mode" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                                Enable raw mode
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Appearance Settings */}
+                      {settingsView === 'appearance' && (
+                        <div className="space-y-8">
+                          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Appearance</h3>
+
+                          {/* Theme Selector */}
+                          <div>
+                            <h4 className="text-base font-medium text-gray-800 dark:text-gray-200 mb-4">Select Theme</h4>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                              {/* Light Theme */}
+                              <div
+                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'light' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                                  }`}
+                                onClick={() => setAppTheme('light')}
+                              >
+                                <div className="bg-white p-2 border-b border-gray-200">
+                                  <div className="flex items-center gap-1">
+                                    <div className="w-2 h-2 rounded-full bg-gray-300"></div>
+                                    <div className="w-12 h-2 bg-gray-200 rounded"></div>
+                                  </div>
+                                </div>
+                                <div className="bg-gray-50 p-2 h-20 flex flex-col">
+                                  <div className="w-3/4 h-2 bg-gray-200 rounded mb-1"></div>
+                                  <div className="w-1/2 h-2 bg-gray-200 rounded"></div>
+                                  <div className="flex-1"></div>
+                                  <div className="w-full h-4 bg-white border border-gray-200 rounded"></div>
+                                </div>
+                                <div className="p-2 bg-white text-center text-xs font-medium text-gray-600">
+                                  Light
+                                </div>
+                              </div>
+
+                              {/* Dark Theme */}
+                              <div
+                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'dark' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                                  }`}
+                                onClick={() => setAppTheme('dark')}
+                              >
+                                <div className="bg-gray-900 p-2 border-b border-gray-700">
+                                  <div className="flex items-center gap-1">
+                                    <div className="w-2 h-2 rounded-full bg-gray-600"></div>
+                                    <div className="w-12 h-2 bg-gray-700 rounded"></div>
+                                  </div>
+                                </div>
+                                <div className="bg-gray-800 p-2 h-20 flex flex-col">
+                                  <div className="w-3/4 h-2 bg-gray-700 rounded mb-1"></div>
+                                  <div className="w-1/2 h-2 bg-gray-700 rounded"></div>
+                                  <div className="flex-1"></div>
+                                  <div className="w-full h-4 bg-gray-900 border border-gray-700 rounded"></div>
+                                </div>
+                                <div className="p-2 bg-gray-900 text-center text-xs font-medium text-gray-300">
+                                  Dark
+                                </div>
+                              </div>
+
+                              {/* Obsidian Theme */}
+                              <div
+                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'obsidian' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                                  }`}
+                                onClick={() => setAppTheme('obsidian')}
+                              >
+                                <div className="bg-black p-2 border-b border-gray-800">
+                                  <div className="flex items-center gap-1">
+                                    <div className="w-2 h-2 rounded-full bg-purple-700"></div>
+                                    <div className="w-12 h-2 bg-gray-800 rounded"></div>
+                                  </div>
+                                </div>
+                                <div className="bg-gray-900 p-2 h-20 flex flex-col">
+                                  <div className="w-3/4 h-2 bg-purple-900/50 rounded mb-1"></div>
+                                  <div className="w-1/2 h-2 bg-purple-900/50 rounded"></div>
+                                  <div className="flex-1"></div>
+                                  <div className="w-full h-4 bg-black border border-gray-800 rounded"></div>
+                                </div>
+                                <div className="p-2 bg-black text-center text-xs font-medium text-purple-300">
+                                  Obsidian
+                                </div>
+                              </div>
+
+                              {/* Nature Theme */}
+                              <div
+                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'nature' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                                  }`}
+                                onClick={() => setAppTheme('nature')}
+                              >
+                                <div className="bg-green-900 p-2 border-b border-green-800">
+                                  <div className="flex items-center gap-1">
+                                    <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                    <div className="w-12 h-2 bg-green-800/70 rounded"></div>
+                                  </div>
+                                </div>
+                                <div className="bg-green-800 p-2 h-20 flex flex-col">
+                                  <div className="w-3/4 h-2 bg-green-700/50 rounded mb-1"></div>
+                                  <div className="w-1/2 h-2 bg-green-700/50 rounded"></div>
+                                  <div className="flex-1"></div>
+                                  <div className="w-full h-4 bg-green-900 border border-green-700/50 rounded"></div>
+                                </div>
+                                <div className="p-2 bg-green-900 text-center text-xs font-medium text-green-100">
+                                  Nature
+                                </div>
+                              </div>
+
+                              {/* Sunset Theme */}
+                              <div
+                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'sunset' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                                  }`}
+                                onClick={() => setAppTheme('sunset')}
+                              >
+                                <div className="bg-gradient-to-r from-red-800 to-orange-700 p-2 border-b border-orange-900">
+                                  <div className="flex items-center gap-1">
+                                    <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+                                    <div className="w-12 h-2 bg-orange-800/70 rounded"></div>
+                                  </div>
+                                </div>
+                                <div className="bg-gradient-to-b from-orange-900 to-orange-950 p-2 h-20 flex flex-col">
+                                  <div className="w-3/4 h-2 bg-orange-700/50 rounded mb-1"></div>
+                                  <div className="w-1/2 h-2 bg-orange-700/50 rounded"></div>
+                                  <div className="flex-1"></div>
+                                  <div className="w-full h-4 bg-orange-950 border border-orange-800 rounded"></div>
+                                </div>
+                                <div className="p-2 bg-orange-950 text-center text-xs font-medium text-orange-100">
+                                  Sunset
+                                </div>
+                              </div>
+
+                              {/* Custom Theme (Placeholder) */}
+                              <div
+                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'custom' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                                  }`}
+                                onClick={() => setAppTheme('custom')}
+                              >
+                                <div className="bg-gradient-to-r from-blue-700 via-purple-700 to-pink-700 p-2">
+                                  <div className="flex items-center gap-1">
+                                    <div className="w-2 h-2 rounded-full bg-white"></div>
+                                    <div className="w-12 h-2 bg-white/30 rounded"></div>
+                                  </div>
+                                </div>
+                                <div className="p-2 h-20 flex flex-col bg-gradient-to-b from-slate-900 to-slate-800">
+                                  <div className="w-3/4 h-2 bg-blue-500/30 rounded mb-1"></div>
+                                  <div className="w-1/2 h-2 bg-purple-500/30 rounded"></div>
+                                  <div className="flex-1"></div>
+                                  <div className="w-full h-4 bg-slate-900 border border-slate-700 rounded"></div>
+                                </div>
+                                <div className="p-2 bg-slate-900 text-center text-xs font-medium text-blue-100">
+                                  Custom
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* UI Density */}
+                          <div className="space-y-3">
+                            <h4 className="text-base font-medium text-gray-800 dark:text-gray-200">UI Density</h4>
+                            <div className="flex space-x-4">
+                              <button className="px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-md text-sm font-medium">
+                                Comfortable
+                              </button>
+                              <button className="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 text-sm">
+                                Compact
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Font Size */}
+                          <div className="space-y-3">
+                            <div className="flex justify-between">
+                              <h4 className="text-base font-medium text-gray-800 dark:text-gray-200">Font Size</h4>
+                              <span className="text-sm text-gray-500 dark:text-gray-400">Medium</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="1"
+                              max="5"
+                              step="1"
+                              defaultValue="3"
+                              className="w-full"
+                            />
+                            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+                              <span>Small</span>
+                              <span>Medium</span>
+                              <span>Large</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Updates */}
+                      {settingsView === 'updates' && (
+                        <div className="space-y-6">
+                          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Updates</h3>
+
+                          <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md">
+                            <div className="flex items-start">
+                              <div className="mr-3 flex-shrink-0 text-blue-500">
+                                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                              <div>
+                                <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300">Current Version</h4>
+                                <div className="mt-1 text-sm text-blue-700 dark:text-blue-400">
+                                  SiLynkr {getVersionString()}
+                                  <span className="ml-2 text-xs bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 py-0.5 px-1.5 rounded">Up to date</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
+                            <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                              Update History
+                            </div>
+                            <div className="p-4 space-y-4">
+                              <div>
+                                <h4 className="text-sm font-medium text-gray-900 dark:text-white">Version 1.0.0-beta</h4>
+                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Released on April 15, 2023</p>
+                                <ul className="mt-2 text-sm text-gray-600 dark:text-gray-400 space-y-1 list-disc list-inside">
+                                  <li>Initial release</li>
+                                  <li>Support for Ollama models</li>
+                                  <li>Conversation management</li>
+                                  <li>Dark mode support</li>
+                                </ul>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
+              </div>
+            ) : (
+              /* Chat Messages */
+              <div className="flex-1 overflow-y-auto p-4" style={{ scrollBehavior: 'smooth' }}>
+                <div className={`${!sidebarOpen ? 'container mx-auto px-4' : ''}`}>
+                  {messages.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center p-6">
+                      <div className="w-16 h-16 mb-4 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
+                        <svg className="w-8 h-8 text-blue-600 dark:text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">Start a conversation</h3>
+                      <p className="text-gray-500 dark:text-gray-400 max-w-md">
+                        Ask questions, get creative responses, or explore what your local AI model can do.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-6 max-w-4xl mx-auto w-full">
+                      {messages.map((message, index) => (
+                        <ChatMessage 
+                          key={index}
+                          role={message.role}
+                          content={message.content}
+                          timestamp={message.timestamp}
+                          models={models}
+                          onRegenerate={message.role === 'assistant' ? (modelName) => regenerateMessage(index, modelName) : undefined}
+                          onLike={message.role === 'assistant' ? () => handleMessageFeedback(index, 'liked') : undefined}
+                          onDislike={message.role === 'assistant' ? () => handleMessageFeedback(index, 'disliked') : undefined}
+                          onEdit={message.role === 'assistant' ? () => startEditingMessage(index) : undefined}
+                          alternateVersions={message.role === 'assistant' ? (messageVersions[index] || [message.content]) : []}
+                          currentVersionIndex={message.role === 'assistant' ? (currentMessageVersions[index] || 0) : 0}
+                          onSelectVersion={message.role === 'assistant' ? (versionIndex) => selectMessageVersion(index, versionIndex) : undefined}
+                        />
+                      ))}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  )}
+                  {loading && (
+                    <div className="flex items-center justify-center py-4">
+                      <div className="animate-pulse flex space-x-2">
+                        <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
+                        <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
+                        <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
+                        <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
+                        <div className="h-2 w-2 bg-gray-400 dark:bg-gray-600 rounded-full"></div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
-                {/* Token usage display */}
-                {showTokenUsage && (
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 flex justify-center gap-4">
-                    <span>Prompt: {promptTokens} tokens</span>
-                    <span>Response: {completionTokens} tokens</span>
-                    <span>Total: {totalTokens} tokens</span>
+            {/* Input Area - only show when not in settings view */}
+            {!showSettings && (
+              <div className="border-t dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
+                <form onSubmit={handleSubmit} className={`${!sidebarOpen ? 'container mx-auto' : ''} max-w-3xl mx-auto`}>
+                  <div className="relative">
+                    <textarea
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          if (input.trim() && !loading) handleSubmit(e);
+                        }
+                      }}
+                      placeholder="Message SiLynkr..."
+                      rows={1}
+                      className="w-full p-3 pr-24 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none overflow-hidden"
+                      disabled={loading}
+                    />
+                    <div className="absolute right-2 bottom-2 flex items-center space-x-1">
+                      <button
+                        type="submit"
+                        className="bg-blue-600 hover:bg-blue-700 text-white p-1.5 rounded-md transition-colors flex items-center justify-center disabled:bg-blue-400 dark:disabled:bg-blue-800 disabled:cursor-not-allowed"
+                        disabled={loading || !selectedModel || !input.trim()}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                        </svg>
+                      </button>
+                      <div>
+                        <div className="flex flex-col items-center justify-center gap-1 m-2">
+                          <SaveIndicator />
+                          <PortIndicator />
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                )}
-              </form>
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* Context Menu */}
-      {contextMenuPosition.conversation && (
-        <>
-          <div
-            className="fixed inset-0 z-40"
-            onClick={closeContextMenu}
+                  {/* Token usage display */}
+                  {showTokenUsage && (
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 flex justify-center gap-4">
+                      <span>Prompt: {promptTokens} tokens</span>
+                      <span>Response: {completionTokens} tokens</span>
+                      <span>Total: {totalTokens} tokens</span>
+                    </div>
+                  )}
+                </form>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Context Menu */}
+        {contextMenuPosition.conversation && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={closeContextMenu}
+            />
+            <div
+              className="fixed z-50 bg-white dark:bg-gray-800 rounded-md shadow-lg py-1 w-48 border border-gray-200 dark:border-gray-700"
+              style={{
+                top: `${contextMenuPosition.y}px`,
+                left: `${contextMenuPosition.x}px`,
+                transform: 'translate(-50%, -50%)'
+              }}
+            >
+              <button
+                onClick={() => loadConversation(contextMenuPosition.conversation!)}
+                className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 w-full text-left flex items-center"
+              >
+                <MessageSquare size={14} className="mr-2" />
+                Open
+              </button>
+              <button
+                onClick={() => showMoveFolderDialog(contextMenuPosition.conversation!)}
+                className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 w-full text-left flex items-center"
+              >
+                <FolderIcon size={14} className="mr-2" />
+                Move to Folder
+              </button>
+              <hr className="my-1 border-gray-200 dark:border-gray-700" />
+              <button
+                onClick={() => deleteConversation(contextMenuPosition.conversation!)}
+                className="px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 w-full text-left flex items-center"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Delete
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* Move Dialog */}
+        {showMoveDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-white/30 dark:bg-gray-900/30">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-96 max-w-md transform transition-all animate-fade-in-up">
+              <h2 className="text-xl font-medium mb-4 text-gray-900 dark:text-white flex items-center">
+                <FolderIcon size={18} className="mr-2 text-blue-600 dark:text-blue-400" />
+                Move Conversation
+              </h2>
+
+              <div className="mb-6">
+                <label htmlFor="folder-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Select destination folder
+                </label>
+                <select
+                  id="folder-select"
+                  value={targetFolderId || ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setTargetFolderId(value === '' ? null : value);
+                  }}
+                  className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
+                >
+                  <option value="">None (Root)</option>
+                  {folders.map(folder => (
+                    <option key={folder._id} value={folder._id}>{folder.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => {
+                    setShowMoveDialog(false);
+                    setConversationToMove(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={moveConversation}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors shadow-sm"
+                >
+                  Move
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Share Dialog */}
+        {showShareDialog && (
+          <ShareDialog
+            open={showShareDialog}
+            onClose={() => setShowShareDialog(false)}
+            messages={messages}
+            conversationId={currentConversationId}
+            title={currentConversationId ?
+              savedConversations.find(c => c._id === currentConversationId)?.title || 'Conversation'
+              : generateConversationTitle(messages)
+            }
           />
-          <div
-            className="fixed z-50 bg-white dark:bg-gray-800 rounded-md shadow-lg py-1 w-48 border border-gray-200 dark:border-gray-700"
-            style={{
-              top: `${contextMenuPosition.y}px`,
-              left: `${contextMenuPosition.x}px`,
-              transform: 'translate(-50%, -50%)'
-            }}
-          >
-            <button
-              onClick={() => loadConversation(contextMenuPosition.conversation!)}
-              className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 w-full text-left flex items-center"
-            >
-              <MessageSquare size={14} className="mr-2" />
-              Open
-            </button>
-            <button
-              onClick={() => showMoveFolderDialog(contextMenuPosition.conversation!)}
-              className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 w-full text-left flex items-center"
-            >
-              <FolderIcon size={14} className="mr-2" />
-              Move to Folder
-            </button>
-            <hr className="my-1 border-gray-200 dark:border-gray-700" />
-            <button
-              onClick={() => deleteConversation(contextMenuPosition.conversation!)}
-              className="px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 w-full text-left flex items-center"
-            >
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              Delete
-            </button>
-          </div>
-        </>
-      )}
+        )}
 
-      {/* Move Dialog */}
-      {showMoveDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-white/30 dark:bg-gray-900/30">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-96 max-w-md transform transition-all animate-fade-in-up">
-            <h2 className="text-xl font-medium mb-4 text-gray-900 dark:text-white flex items-center">
-              <FolderIcon size={18} className="mr-2 text-blue-600 dark:text-blue-400" />
-              Move Conversation
-            </h2>
-
-            <div className="mb-6">
-              <label htmlFor="folder-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Select destination folder
-              </label>
-              <select
-                id="folder-select"
-                value={targetFolderId || ''}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setTargetFolderId(value === '' ? null : value);
-                }}
-                className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
-              >
-                <option value="">None (Root)</option>
-                {folders.map(folder => (
-                  <option key={folder._id} value={folder._id}>{folder.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => {
-                  setShowMoveDialog(false);
-                  setConversationToMove(null);
-                }}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={moveConversation}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors shadow-sm"
-              >
-                Move
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Share Dialog */}
-      {showShareDialog && (
-        <ShareDialog
-          open={showShareDialog}
-          onClose={() => setShowShareDialog(false)}
-          messages={messages}
-          conversationId={currentConversationId}
-          title={currentConversationId ?
-            savedConversations.find(c => c._id === currentConversationId)?.title || 'Conversation'
-            : generateConversationTitle(messages)
-          }
-        />
-      )}
-
-      {/* Settings Dialog */}
-      {showSettingsDialog && (
-        <SettingsDialog
-          open={showSettingsDialog}
-          onClose={() => setShowSettingsDialog(false)}
-          systemPrompt={systemPrompt}
-          setSystemPrompt={setSystemPrompt}
-          temperature={temperature}
-          setTemperature={setTemperature}
-          useConversationHistory={useConversationHistory}
-          setUseConversationHistory={setUseConversationHistory}
-          historyLength={historyLength}
-          setHistoryLength={setHistoryLength}
-          mongodbUri={mongodbUri}
-          setMongodbUri={setMongodbUri}
-          saveMongoDbUri={saveMongoDbUri}
-          usingLocalStorage={usingLocalStorage}
-          autoSave={autoSave}
-          setAutoSave={setAutoSave}
-          formatOption={formatOption}
-          setFormatOption={setFormatOption}
-          topP={topP}
-          setTopP={setTopP}
-          topK={topK}
-          setTopK={setTopK}
-          suffixText={suffixText}
-          setSuffixText={setSuffixText}
-          customTemplate={customTemplate}
-          setCustomTemplate={setCustomTemplate}
-          keepAliveOption={keepAliveOption}
-          setKeepAliveOption={setKeepAliveOption}
-          thinkingEnabled={thinkingEnabled}
-          setThinkingEnabled={setThinkingEnabled}
-          rawModeEnabled={rawModeEnabled}
-          setRawModeEnabled={setRawModeEnabled}
-        />
-      )}
+        {/* Settings Dialog */}
+        {showSettingsDialog && (
+          <SettingsDialog
+            open={showSettingsDialog}
+            onClose={() => setShowSettingsDialog(false)}
+            systemPrompt={systemPrompt}
+            setSystemPrompt={setSystemPrompt}
+            temperature={temperature}
+            setTemperature={setTemperature}
+            useConversationHistory={useConversationHistory}
+            setUseConversationHistory={setUseConversationHistory}
+            historyLength={historyLength}
+            setHistoryLength={setHistoryLength}
+            mongodbUri={mongodbUri}
+            setMongodbUri={setMongodbUri}
+            saveMongoDbUri={saveMongoDbUri}
+            usingLocalStorage={usingLocalStorage}
+            autoSave={autoSave}
+            setAutoSave={setAutoSave}
+            formatOption={formatOption}
+            setFormatOption={setFormatOption}
+            topP={topP}
+            setTopP={setTopP}
+            topK={topK}
+            setTopK={setTopK}
+            suffixText={suffixText}
+            setSuffixText={setSuffixText}
+            customTemplate={customTemplate}
+            setCustomTemplate={setCustomTemplate}
+            keepAliveOption={keepAliveOption}
+            setKeepAliveOption={setKeepAliveOption}
+            thinkingEnabled={thinkingEnabled}
+            setThinkingEnabled={setThinkingEnabled}
+            rawModeEnabled={rawModeEnabled}
+            setRawModeEnabled={setRawModeEnabled}
+          />
+        )}
+      </div>
     </div>
   );
 }
