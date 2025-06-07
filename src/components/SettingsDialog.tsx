@@ -113,7 +113,7 @@ export default function SettingsDialog({
           <div>
             <h2 className="text-xl font-medium text-gray-900 dark:text-white">Settings</h2>
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              SiLynkr {getVersionString()} by <a href="https://si4k.me" target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-500">Si4k</a>
+              SiLynkr {getVersionString()} by <a href="https://si4k.me" target="_blank" rel="noopener noreferrer" className="underline hover:text-[#6C63FF]">Si4k</a>
             </div>
           </div>
           <button 
@@ -162,7 +162,7 @@ export default function SettingsDialog({
         <div className="p-4 border-t dark:border-gray-700 flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md shadow-sm text-sm"
+            className="px-4 py-2 bg-[#6C63FF] hover:bg-[#5754D2] text-white rounded-md shadow-sm text-sm"
           >
             Close
           </button>

@@ -1,3 +1,5 @@
+'use client';
+
 import ChatInterface from '@/components/ChatInterface';
 // import OllamaTest from '@/components/OllamaTest';
 

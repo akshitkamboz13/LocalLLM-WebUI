@@ -8,7 +8,7 @@
   --foreground: #171717;
   --card-background: #ffffff;
   --card-foreground: #171717;
-  --primary: #2563eb;
+  --primary: #6C63FF;
   --primary-foreground: #ffffff;
   --muted: #f3f4f6;
   --muted-foreground: #6b7280;
@@ -18,7 +18,7 @@
   --destructive-foreground: #ffffff;
   --border: #e5e7eb;
   --input: #e5e7eb;
-  --ring: #2563eb;
+  --ring: #6C63FF;
 }
 
 .dark {
@@ -26,7 +26,7 @@
   --foreground: #ededed;
   --card-background: #1f2937;
   --card-foreground: #f9fafb;
-  --primary: #3b82f6;
+  --primary: #5754D2;
   --primary-foreground: #ffffff;
   --muted: #374151;
   --muted-foreground: #9ca3af;
@@ -36,7 +36,7 @@
   --destructive-foreground: #ffffff;
   --border: #374151;
   --input: #374151;
-  --ring: #3b82f6;
+  --ring: #5754D2;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -95,10 +95,10 @@ body {
 
 @keyframes pulseBlue {
   0%, 100% {
-    background-color: rgba(59, 130, 246, 1);
+    background-color: rgba(108, 99, 255, 1);
   }
   50% {
-    background-color: rgba(37, 99, 235, 1);
+    background-color: rgba(87, 84, 210, 1);
   }
 }
 
@@ -331,8 +331,8 @@ textarea {
 
 @layer base {
   :root {
-    --primary: 37 99 235;     /* blue-600 */
-    --primary-hover: 29 78 216; /* blue-700 */
+    --primary: 108 99 255;     /* #6C63FF */
+    --primary-hover: 87 84 210; /* #5754D2 */
     --primary-content: 255 255 255;
     
     --secondary: 148 163 184;  /* slate-400 */
@@ -353,8 +353,8 @@ textarea {
   }
   
   .dark {
-    --primary: 59 130 246;     /* blue-500 */
-    --primary-hover: 37 99 235; /* blue-600 */
+    --primary: 87 84 210;     /* #5754D2 */
+    --primary-hover: 108 99 255; /* #6C63FF */
     --primary-content: 255 255 255;
     
     --secondary: 51 65 85;     /* slate-700 */
@@ -441,8 +441,8 @@ textarea {
   }
   
   .theme-custom {
-    --primary: 79 70 229;      /* indigo-600 */
-    --primary-hover: 67 56 202; /* indigo-700 */
+    --primary: 108 99 255;      /* #6C63FF */
+    --primary-hover: 87 84 210; /* #5754D2 */
     --primary-content: 255 255 255;
     
     --secondary: 124 58 237;   /* violet-600 */

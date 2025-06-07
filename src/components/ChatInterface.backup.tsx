@@ -983,7 +983,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
           </button>
         </div>
         
-        <button className="m-3 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md transition-colors" 
+        <button className="m-3 flex items-center justify-center gap-2 bg-[#6C63FF] hover:bg-[#5754D2] text-white py-2 px-4 rounded-md transition-colors" 
           onClick={createNewConversation}
         >
           <Plus size={16} />

@@ -118,7 +118,7 @@ export default function ChatMessage({
     >
       {!isUser && (
         <div className="flex-shrink-0 mr-3">
-          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white">
+          <div className="w-8 h-8 rounded-full bg-[#6C63FF] flex items-center justify-center text-white">
             <Bot size={18} />
           </div>
         </div>
@@ -126,7 +126,7 @@ export default function ChatMessage({
       
       <div className={`relative max-w-[80%] rounded-lg p-4 shadow-sm
         ${isUser 
-          ? 'bg-blue-600 text-white' 
+          ? 'bg-[#6C63FF] text-white' 
           : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-white'}`}
       >
         <div className="font-semibold mb-1 flex items-center justify-between">
@@ -150,11 +150,13 @@ export default function ChatMessage({
               rehypePlugins={[rehypeKatex]}
               skipHtml={true}
               components={{
-                code({ node, inline, className, children, ...props }) {
+                code({ node, className, children, ...props }) {
                   const match = /language-(\w+)/.exec(className || '');
+                  const inline = className?.includes('inline');
                   return !inline && match ? (
                     <SyntaxHighlighter
-                      style={atomDark}
+                      // @ts-ignore - The type definitions for react-syntax-highlighter are incorrect
+                      style={atomDark as any}
                       language={match[1]}
                       PreTag="div"
                       customStyle={{
@@ -212,7 +214,7 @@ export default function ChatMessage({
               >
                 <button 
                   onClick={copyToClipboard}
-                  className="message-action-button text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 tooltip-container"
+                  className="message-action-button text-gray-700 dark:text-gray-300 hover:text-[#6C63FF] dark:hover:text-[#5754D2] tooltip-container"
                   title="Copy response"
                 >
                   {copied ? <CheckCircle size={18} className="text-green-500" /> : <Copy size={18} />}
@@ -222,7 +224,7 @@ export default function ChatMessage({
                 {onLike && (
                   <button 
                     onClick={handleLike}
-                    className={`message-action-button hover:text-blue-600 dark:hover:text-blue-400 tooltip-container ${liked ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}
+                    className={`message-action-button hover:text-[#6C63FF] dark:hover:text-[#5754D2] tooltip-container ${liked ? 'text-[#6C63FF] dark:text-[#5754D2]' : 'text-gray-700 dark:text-gray-300'}`}
                     title="Like response"
                   >
                     <ThumbsUp size={18} />
@@ -233,7 +235,7 @@ export default function ChatMessage({
                 {onDislike && (
                   <button 
                     onClick={handleDislike}
-                    className={`message-action-button hover:text-red-600 dark:hover:text-red-400 tooltip-container ${disliked ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'}`}
+                    className={`message-action-button hover:text-[#6C63FF] dark:hover:text-[#5754D2] tooltip-container ${disliked ? 'text-[#6C63FF] dark:text-[#5754D2]' : 'text-gray-700 dark:text-gray-300'}`}
                     title="Dislike response"
                   >
                     <ThumbsDown size={18} />
@@ -244,7 +246,7 @@ export default function ChatMessage({
                 {onEdit && (
                   <button 
                     onClick={onEdit}
-                    className="message-action-button text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 tooltip-container"
+                    className="message-action-button text-gray-700 dark:text-gray-300 hover:text-[#6C63FF] dark:hover:text-[#5754D2] tooltip-container"
                     title="Edit response"
                   >
                     <Edit3 size={18} />
@@ -256,7 +258,7 @@ export default function ChatMessage({
                   <div className="relative tooltip-container" ref={modelsRef}>
                     <button 
                       onClick={() => setShowModels(!showModels)}
-                      className="message-action-button text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400"
+                      className="message-action-button text-gray-700 dark:text-gray-300 hover:text-[#6C63FF] dark:hover:text-[#5754D2] tooltip-container"
                       title="Regenerate response"
                     >
                       <RefreshCw size={18} />

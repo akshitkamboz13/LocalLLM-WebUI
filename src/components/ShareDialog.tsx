@@ -262,7 +262,7 @@ export default function ShareDialog({ open, onClose, messages, conversationId, t
           <button
             onClick={() => setActiveTab('export')}
             className={`px-4 py-2 font-medium text-sm ${activeTab === 'export' 
-              ? 'text-blue-600 border-b-2 border-blue-600 dark:text-blue-400 dark:border-blue-400' 
+              ? 'text-[#6C63FF] border-b-2 border-[#6C63FF] dark:text-[#5754D2] dark:border-[#5754D2]' 
               : 'text-gray-600 dark:text-gray-400'}`}
           >
             Export
@@ -270,7 +270,7 @@ export default function ShareDialog({ open, onClose, messages, conversationId, t
           <button
             onClick={() => setActiveTab('link')}
             className={`px-4 py-2 font-medium text-sm ${activeTab === 'link' 
-              ? 'text-blue-600 border-b-2 border-blue-600 dark:text-blue-400 dark:border-blue-400' 
+              ? 'text-[#6C63FF] border-b-2 border-[#6C63FF] dark:text-[#5754D2] dark:border-[#5754D2]' 
               : 'text-gray-600 dark:text-gray-400'}`}
           >
             Share Link
@@ -278,7 +278,7 @@ export default function ShareDialog({ open, onClose, messages, conversationId, t
           <button
             onClick={() => setActiveTab('qr')}
             className={`px-4 py-2 font-medium text-sm ${activeTab === 'qr' 
-              ? 'text-blue-600 border-b-2 border-blue-600 dark:text-blue-400 dark:border-blue-400' 
+              ? 'text-[#6C63FF] border-b-2 border-[#6C63FF] dark:text-[#5754D2] dark:border-[#5754D2]' 
               : 'text-gray-600 dark:text-gray-400'}`}
           >
             QR Code
@@ -382,7 +382,7 @@ export default function ShareDialog({ open, onClose, messages, conversationId, t
                 className={`w-full flex items-center justify-center p-2 rounded-md ${
                   shareLinkLoading 
                     ? 'bg-gray-300 dark:bg-gray-700 cursor-wait'
-                    : 'bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800'
+                    : 'bg-[#6C63FF] hover:bg-[#5754D2] dark:bg-[#5754D2] dark:hover:bg-[#6C63FF]'
                 } text-white`}
               >
                 {shareLinkLoading ? (
@@ -413,7 +413,7 @@ export default function ShareDialog({ open, onClose, messages, conversationId, t
                       setActiveTab('link');
                       generateShareLink();
                     }}
-                    className="py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
+                    className="py-2 px-4 bg-[#6C63FF] hover:bg-[#5754D2] text-white rounded-md"
                   >
                     Generate Link
                   </button>
@@ -472,7 +472,7 @@ export default function ShareDialog({ open, onClose, messages, conversationId, t
                         console.error('Error saving QR code:', error);
                       }
                     }}
-                    className="mt-4 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center"
+                    className="mt-4 py-2 px-4 bg-[#6C63FF] hover:bg-[#5754D2] text-white rounded-md flex items-center"
                   >
                     <Download size={18} className="mr-2" />
                     <span>Save QR Code</span>

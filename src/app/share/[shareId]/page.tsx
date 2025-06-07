@@ -209,9 +209,9 @@ export default function SharedConversationPage() {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <div className="animate-pulse flex space-x-3">
-          <div className="h-3 w-3 bg-blue-400 rounded-full"></div>
-          <div className="h-3 w-3 bg-blue-400 rounded-full"></div>
-          <div className="h-3 w-3 bg-blue-400 rounded-full"></div>
+          <div className="h-3 w-3 bg-[#6C63FF]/70 rounded-full"></div>
+          <div className="h-3 w-3 bg-[#6C63FF]/70 rounded-full"></div>
+          <div className="h-3 w-3 bg-[#6C63FF]/70 rounded-full"></div>
         </div>
       </div>
     );
@@ -252,7 +252,7 @@ export default function SharedConversationPage() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <MessageSquare size={20} className="text-blue-600 dark:text-blue-400" />
+                  <MessageSquare size={20} className="text-[#6C63FF] dark:text-[#5754D2]" />
                   <h1 className="text-xl font-semibold text-gray-900 dark:text-white">{conversation.title}</h1>
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -263,7 +263,7 @@ export default function SharedConversationPage() {
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={copyShareLink}
-                  className="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600"
+                  className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2 text-sm font-medium rounded-md text-white bg-[#6C63FF] hover:bg-[#5754D2]"
                 >
                   {copied ? (
                     <>
@@ -280,7 +280,7 @@ export default function SharedConversationPage() {
                 
                 <button
                   onClick={exportAsTxt}
-                  className="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600"
+                  className="inline-flex items-center px-3 py-1.5 bg-[#6C63FF] hover:bg-[#5754D2] text-white rounded-md text-sm"
                 >
                   <Download size={16} className="mr-2" />
                   <span>Export as Text</span>
@@ -288,7 +288,7 @@ export default function SharedConversationPage() {
                 
                 <button
                   onClick={exportAsPdf}
-                  className="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600"
+                  className="inline-flex items-center px-3 py-1.5 bg-[#6C63FF] hover:bg-[#5754D2] text-white rounded-md text-sm"
                 >
                   <FileText size={16} className="mr-2" />
                   <span>Export as PDF</span>
@@ -296,7 +296,7 @@ export default function SharedConversationPage() {
                 
                 <Link
                   href="/"
-                  className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm"
+                  className="inline-flex items-center px-3 py-1.5 bg-[#6C63FF] hover:bg-[#5754D2] text-white rounded-md text-sm"
                 >
                   <ArrowLeft size={16} className="mr-2" />
                   <span>Open App</span>
@@ -333,7 +333,7 @@ export default function SharedConversationPage() {
         <div className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
           <p>
             Shared via{' '}
-            <Link href="https://silynkr.si4k.me/" className="text-blue-600 dark:text-blue-400 hover:underline">
+            <Link href="https://silynkr.si4k.me/" className="text-[#6C63FF] dark:text-[#5754D2] hover:underline">
               SiLynkr
             </Link>
           </p>

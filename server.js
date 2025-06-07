@@ -116,15 +116,15 @@ app.prepare().then(async () => {
       const colorGreen = '\x1b[32m';
       const colorYellow = '\x1b[33m';
       const colorReset = '\x1b[0m';
-      const colorBlue = '\x1b[34m';
+      const colorPurple = '\x1b[35m';
       const boxChar = '█';
       
       console.log('\n');
-      console.log(`${colorBlue}${boxChar.repeat(60)}${colorReset}`);
+      console.log(`${colorPurple}${boxChar.repeat(60)}${colorReset}`);
       console.log(`${colorGreen}SiLynkr is running! 🚀${colorReset}`);
       console.log(`${colorYellow}> Running on Port: ${port} (${name})${colorReset}`);
       console.log(`${colorGreen}> URL: http://localhost:${port}${colorReset}`);
-      console.log(`${colorBlue}${boxChar.repeat(60)}${colorReset}`);
+      console.log(`${colorPurple}${boxChar.repeat(60)}${colorReset}`);
       console.log('\n');
       
       // Make port info available to the app

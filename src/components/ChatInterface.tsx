@@ -53,6 +53,10 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
   const [darkMode, setDarkMode] = useState<boolean>(false);
   const [theme, setTheme] = useState<'light' | 'dark' | 'obsidian' | 'nature' | 'sunset' | 'custom'>('light');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(256); // Default width of 256px (64 in rem units)
+  const [isResizing, setIsResizing] = useState(false);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const resizeRef = useRef<HTMLDivElement>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsView, setSettingsView] = useState<'general' | 'advanced' | 'appearance' | 'updates'>('general');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -93,6 +97,8 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
   const [showMoveDialog, setShowMoveDialog] = useState<boolean>(false);
   const [conversationToMove, setConversationToMove] = useState<SavedConversation | null>(null);
   const [targetFolderId, setTargetFolderId] = useState<string | null>(null);
+  const [folderToMove, setFolderToMove] = useState<Folder | null>(null);
+  const [isFolderMove, setIsFolderMove] = useState<boolean>(false);
   const [showShareDialog, setShowShareDialog] = useState<boolean>(false);
   const [formatOption, setFormatOption] = useState<string>('');
   const [thinkingEnabled, setThinkingEnabled] = useState<boolean>(false);
@@ -122,32 +128,35 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
   
   // Add new state for version notification
   const [showVersionNotification, setShowVersionNotification] = useState(true);
-
+  
+  // Add additional useRef hooks at the component level
+  const newFolderInputRef = useRef<HTMLDivElement>(null);
+  
   const router = useRouter();
   const searchParams = useSearchParams();
-
+  
   // Handle URL parameters
   useEffect(() => {
     const modelParam = searchParams.get('model');
     const tempParam = searchParams.get('temperature');
     const systemPromptParam = searchParams.get('systemPrompt');
-
+    
     if (modelParam && models.some(m => m.name === modelParam)) {
       setSelectedModel(modelParam);
     }
-
+    
     if (tempParam) {
       const temp = parseFloat(tempParam);
       if (!isNaN(temp) && temp >= 0 && temp <= 2) {
         setTemperature(temp);
       }
     }
-
+    
     if (systemPromptParam) {
       setSystemPrompt(systemPromptParam);
     }
   }, [searchParams, models]);
-
+  
   // Fetch folders and tags
   useEffect(() => {
     async function fetchFoldersAndTags() {
@@ -171,10 +180,10 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
             }
           })
         ]);
-
+        
         const foldersData = await foldersRes.json();
         const tagsData = await tagsRes.json();
-
+        
         if (foldersData.success && foldersData.folders) {
           console.log(`Successfully fetched ${foldersData.folders.length} folders`);
           setFolders(foldersData.folders);
@@ -193,10 +202,10 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
         showToast('Error loading folders. Check console for details.', 'error');
       }
     }
-
+    
     fetchFoldersAndTags();
   }, []);
-
+  
   // Initialize MongoDB URI from localStorage if available
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -247,8 +256,8 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
         const data = await response.json();
 
         if (data.success) {
-          localStorage.setItem('MONGODB_URI', mongodbUri);
-          setUsingLocalStorage(false);
+        localStorage.setItem('MONGODB_URI', mongodbUri);
+        setUsingLocalStorage(false);
           showToast('MongoDB connection successful! URI saved.', 'success');
           setShowSettings(false); // Close settings panel
 
@@ -271,7 +280,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
       showToast('Error testing MongoDB connection. Check console for details.', 'error');
     }
   };
-
+  
   // Update saveConversation function to track saved state
   const saveConversation = async () => {
     if (messages.length === 0) {
@@ -297,7 +306,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
         isShared,
         shareSettings
       };
-
+      
       // Get MongoDB URI from localStorage if available
       const storedMongoUri = typeof window !== 'undefined'
         ? localStorage.getItem('MONGODB_URI') || ''
@@ -378,7 +387,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
       showToast(`Failed to save: ${errorMessage}`, 'error');
     }
   };
-
+  
   // Share conversation
   const shareConversation = async () => {
     if (messages.length === 0) {
@@ -396,15 +405,15 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
       setShowShareDialog(true);
     }
   };
-
+  
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
-
+  
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
+  
   // Check system preference for dark mode
   useEffect(() => {
     // Get theme from local storage or system preference
@@ -415,7 +424,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
         setAppTheme(savedTheme);
       } else {
         // Default to system preference for dark mode
-        const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
         setAppTheme(isDarkMode ? 'dark' : 'light');
       }
     }
@@ -677,7 +686,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
         console.error('Error parsing response JSON:', parseError);
         throw new Error('Invalid JSON response from server');
       }
-
+  
       if (data.error) {
         setError(data.error);
       } else {
@@ -734,7 +743,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
       setLoading(false);
     }
   };
-
+  
   // Update clearChat function to reset saved state
   const clearChat = () => {
     setMessages([]);
@@ -791,7 +800,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
       ? "bg-green-600 dark:bg-green-400"
       : "bg-amber-600 dark:bg-amber-400";
 
-    return (
+  return (
       <span className="relative group inline-flex items-center">
         {/* Colored status dot */}
         <span className={`w-2 h-2 rounded-full ${color} ${lastConversationSaved ? "" : "animate-pulse"}`} />
@@ -920,19 +929,29 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
 
   // Function to create a new folder
   const createFolder = async (parentId: string | null = null) => {
-    if (!newFolderName.trim()) {
-      showToast('Please enter a folder name', 'error');
-      return;
-    }
-
     try {
-      // Get MongoDB URI from localStorage if available
+      // Use the existing newFolderName state instead of showing a prompt
+      if (!newFolderName.trim()) {
+        showToast('Please enter a folder name', 'info');
+        return;
+      }
+      
       const storedMongoUri = typeof window !== 'undefined'
         ? localStorage.getItem('MONGODB_URI') || ''
         : '';
-
-      console.log('Creating folder with MongoDB URI:', storedMongoUri ? 'URI provided' : 'No URI');
-
+      
+      // Calculate path if there's a parent folder
+      let path = '';
+      let level = 0;
+      
+      if (parentId) {
+        const parentFolder = folders.find(f => f._id === parentId);
+        if (parentFolder) {
+          path = parentFolder.path ? `${parentFolder.path},${parentId}` : parentId;
+          level = parentFolder.level ? parentFolder.level + 1 : 1;
+        }
+      }
+      
       const response = await fetch('/api/folders', {
         method: 'POST',
         headers: {
@@ -941,44 +960,37 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
         },
         body: JSON.stringify({
           name: newFolderName,
-          color: 'blue', // Default color
-          parentId: parentId // This will be null for root folders
+          color: '#6C63FF', // Default color purple
+          parentId,
+          path,
+          level
         }),
       });
-
-      console.log('Folder creation API response status:', response.status);
+      
       const data = await response.json();
-      console.log('Folder creation API response data:', data);
-
+      
       if (data.success && data.folder) {
-        // Add new folder to state
-        const newFolder = data.folder;
-        setFolders(prev => [...prev, newFolder]);
-
-        // Automatically expand the new folder and its parent if it has one
-        setExpandedFolders(prev => ({
-          ...prev,
-          [newFolder._id]: true,
-          ...(newFolder.parentId ? { [newFolder.parentId]: true } : {})
-        }));
-
-        showToast(`Folder "${newFolderName}" created successfully${parentId ? ' as subfolder' : ''}!`, 'success');
+        setFolders([...folders, data.folder]);
+        showToast(`Folder "${newFolderName}" created`, 'success');
+        
+        // Clear the input and hide it after successful creation
+        setNewFolderName('');
+        setShowNewSubfolderInput(false);
+        setShowNewFolderInput(false);
+        
+        // Auto-expand the parent folder
+        if (parentId) {
+          setExpandedFolders(prev => ({
+            ...prev,
+            [parentId]: true
+          }));
+        }
       } else {
         throw new Error(data.error || 'Failed to create folder');
       }
     } catch (error) {
       console.error('Error creating folder:', error);
       showToast('Failed to create folder', 'error');
-    } finally {
-      // Always clear input and hide it regardless of success or failure
-      setNewFolderName('');
-      setShowNewFolderInput(false);
-
-      // Reset subfolder input state if applicable
-      if (parentId) {
-        setShowNewSubfolderInput(false);
-        setNewSubfolderParentId(null);
-      }
     }
   };
 
@@ -1000,6 +1012,9 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
       y: 0,
       conversation: null
     });
+    
+    // Also close color picker when context menu closes
+    // setShowColorPicker(false);
   };
 
   // Function to delete a conversation
@@ -1041,15 +1056,34 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
     }
   };
 
+  // Function to show move folder dialog for a folder
+  const showMoveFolderToFolderDialog = (folder: Folder) => {
+    setFolderToMove(folder);
+    setIsFolderMove(true);
+    // Set current parent as default target, or null if it's a root folder
+    setTargetFolderId(folder.parentId || null);
+    setShowMoveDialog(true);
+    closeFolderContextMenu();
+  };
+
   // Function to show move dialog
   const showMoveFolderDialog = (conversation: SavedConversation) => {
     setConversationToMove(conversation);
+    setIsFolderMove(false);
     // Use the helper function to extract a valid folder ID string
     const folderIdValue = getFolderIdString(conversation.folderId);
     setTargetFolderId(folderIdValue);
     setShowMoveDialog(true);
     console.log('Available folders for moving:', folders);
     closeContextMenu();
+  };
+
+  // Helper function to safely extract folder ID regardless of format
+  const getFolderIdString = (folderId: string | { _id: string } | null | undefined): string | null => {
+    if (!folderId) return null;
+    if (typeof folderId === 'string') return folderId;
+    if (typeof folderId === 'object' && '_id' in folderId) return folderId._id;
+    return null;
   };
 
   // Function to move conversation to folder
@@ -1109,7 +1143,28 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
         }
 
         // Refresh conversations list to ensure UI is up to date
-        setTimeout(() => fetchSavedConversations(), 500);
+        setTimeout(() => {
+          // Get MongoDB URI from localStorage if available
+          const storedMongoUri = typeof window !== 'undefined'
+            ? localStorage.getItem('MONGODB_URI') || ''
+            : '';
+          
+          // Fetch folders from API
+          fetch('/api/folders', {
+            headers: {
+              'X-MongoDB-URI': storedMongoUri
+            }
+          })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success && data.folders) {
+              setFolders(data.folders);
+            }
+          })
+          .catch(err => {
+            console.error('Error fetching folders:', err);
+          });
+        }, 500);
       } else {
         throw new Error(data.error || 'Failed to move conversation');
       }
@@ -1198,14 +1253,6 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
     }
   };
 
-  // Helper function to safely extract folder ID regardless of format
-  const getFolderIdString = (folderId: string | { _id: string } | null | undefined): string | null => {
-    if (!folderId) return null;
-    if (typeof folderId === 'string') return folderId;
-    if (typeof folderId === 'object' && '_id' in folderId) return folderId._id;
-    return null;
-  };
-
   // Helper function to get folders organized in a hierarchical structure
   const getFolderHierarchy = (allFolders: Folder[]) => {
     // First, separate root folders and child folders
@@ -1229,6 +1276,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
 
   // Show folder context menu
   const showFolderContextMenu = (e: React.MouseEvent, folder: Folder) => {
+    console.log('Right-click event detected', { x: e.clientX, y: e.clientY, folder });
     e.preventDefault();
     e.stopPropagation();
     setFolderContextMenu({
@@ -1245,6 +1293,9 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
       y: 0,
       folder: null
     });
+    
+    // Also close color picker when context menu closes
+    // setShowColorPicker(false);
   };
 
   // Delete folder
@@ -1288,6 +1339,54 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
   const [newSubfolderParentId, setNewSubfolderParentId] = useState<string | null>(null);
   const [showNewSubfolderInput, setShowNewSubfolderInput] = useState<boolean>(false);
 
+  // Add effect for handling clicks outside the main folder input
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (newFolderInputRef.current && !newFolderInputRef.current.contains(event.target as Node)) {
+        setShowNewFolderInput(false);
+        setNewFolderName('');
+      }
+    }
+
+    if (showNewFolderInput) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showNewFolderInput]);
+  
+  // Add effect for handling clicks outside the subfolder input
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (showNewSubfolderInput && !event.target) {
+        return;
+      }
+      
+      const subfolderInputs = document.querySelectorAll('.subfolder-input-container');
+      let clickedInside = false;
+      
+      subfolderInputs.forEach(container => {
+        if (container.contains(event.target as Node)) {
+          clickedInside = true;
+        }
+      });
+      
+      if (!clickedInside && showNewSubfolderInput) {
+        setShowNewSubfolderInput(false);
+        setNewSubfolderParentId(null);
+        setNewFolderName('');
+      }
+    }
+
+    if (showNewSubfolderInput) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showNewSubfolderInput]);
+
   const startCreateSubfolder = (parentId: string) => {
     setNewSubfolderParentId(parentId);
     setNewFolderName('');
@@ -1330,12 +1429,15 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
         <div className="flex items-center w-full">
           <button
             onClick={() => toggleFolder(folder._id)}
-            onContextMenu={(e) => showFolderContextMenu(e, folder)}
+            onContextMenu={(e) => {
+              console.log("Right-click detected on folder:", folder.name);
+              showFolderContextMenu(e, folder);
+            }}
             className="flex-1 flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
           >
             <div className="flex items-center gap-2 text-sm">
               <div style={{ paddingLeft: `${(folder.level || 0) * 12}px` }} className="flex items-center gap-2">
-                <FolderIcon size={14} className={folder.color ? `text-${folder.color}-500` : ''} />
+                <FolderIcon size={14} className={folder.color ? '' : ''} style={{ color: folder.color || '#6C63FF' }} />
                 <span>{folder.name}</span>
               </div>
             </div>
@@ -1394,13 +1496,13 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
 
         {/* New subfolder input */}
         {showNewSubfolderInput && newSubfolderParentId === folder._id && (
-          <div className="ml-6 mb-2 flex items-center">
+          <div className="ml-6 mb-2 flex items-center max-w-full relative overflow-visible subfolder-input-container">
             <input
               type="text"
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
               placeholder="Subfolder name"
-              className="flex-1 text-sm border border-gray-300 dark:border-gray-600 rounded-l-md p-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-l-md p-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-white pr-16"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') createFolder(folder._id);
                 if (e.key === 'Escape') {
@@ -1412,7 +1514,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
             />
             <button
               onClick={() => createFolder(folder._id)}
-              className="bg-blue-600 hover:bg-blue-700 text-white p-1 rounded-r-md text-sm"
+              className="absolute right-0 top-0 bottom-0 bg-[#6C63FF] hover:bg-[#5754D2] text-white px-2 rounded-r-md text-xs whitespace-nowrap"
             >
               Create
             </button>
@@ -1449,7 +1551,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                     key={conv._id}
                     onClick={() => loadConversation(conv)}
                     onContextMenu={(e) => handleContextMenu(e, conv)}
-                    className={`w-full text-left px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-xs truncate ${currentConversationId === conv._id ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400'
+                    className={`w-full text-left px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-xs truncate ${currentConversationId === conv._id ? 'bg-[#6C63FF]/10 dark:bg-[#5754D2]/30 text-[#6C63FF] dark:text-[#5754D2]' : 'text-gray-600 dark:text-gray-400'
                       }`}
                   >
                     {conv.title}
@@ -1467,20 +1569,298 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
     );
   };
 
+  // Add function to change folder color
+  const changeFolderColor = async (folderId: string, color: string) => {
+    try {
+      console.log('Changing folder color:', { folderId, color });
+      
+      const storedMongoUri = typeof window !== 'undefined'
+        ? localStorage.getItem('MONGODB_URI') || ''
+        : '';
+
+      console.log('Using MongoDB URI:', storedMongoUri ? 'URI provided' : 'No URI');
+      
+      const response = await fetch(`/api/folders/${folderId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-MongoDB-URI': storedMongoUri
+        },
+        body: JSON.stringify({
+          color: color
+        }),
+      });
+
+      console.log('Color update API response status:', response.status);
+      
+      const data = await response.json();
+      console.log('Color update API response data:', data);
+
+      if (data.success) {
+        // Update folder in state
+        setFolders(folders.map(f => 
+          f._id === folderId ? { ...f, color: color } : f
+        ));
+        showToast('Folder color updated successfully', 'success');
+      } else {
+        throw new Error(data.error || 'Failed to update folder color');
+      }
+    } catch (error) {
+      console.error('Error updating folder color:', error);
+      showToast('Failed to update folder color', 'error');
+    } finally {
+      // setShowColorPicker(false);
+      // setFolderToChangeColor(null);
+    }
+  };
+
+  // Function to show color picker
+  const showFolderColorPicker = (folder: Folder, x: number, y: number) => {
+    console.log('Showing color picker for folder:', { folder, x, y });
+    
+    // Create a temporary input element of type color
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.value = folder.color || '#6C63FF';
+    
+    // Track if the input has been removed
+    let inputRemoved = false;
+    
+    // Function to safely remove the input element
+    const safelyRemoveInput = () => {
+      if (!inputRemoved && document.body.contains(input)) {
+        document.body.removeChild(input);
+        inputRemoved = true;
+      }
+    };
+    
+    // When the color is selected, update the folder
+    input.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement;
+      const newColor = target.value;
+      console.log('Color selected:', newColor);
+      changeFolderColor(folder._id, newColor);
+      safelyRemoveInput();
+    });
+    
+    // Trigger the color picker dialog
+    document.body.appendChild(input);
+    input.click();
+    
+    // Remove the input after selection
+    input.addEventListener('input', () => {
+      setTimeout(() => {
+        safelyRemoveInput();
+      }, 100);
+    });
+    
+    // Clean up if canceled
+    setTimeout(() => {
+      safelyRemoveInput();
+    }, 1000);
+    
+    // Close the context menu
+    closeFolderContextMenu();
+  };
+
+  // State to track whether we're on the client side
+  const [isClient, setIsClient] = useState(false);
+  
+  // Only enable client-side features after mount
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // Load saved sidebar width from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedWidth = localStorage.getItem('silynkr-sidebar-width');
+      if (savedWidth) {
+        setSidebarWidth(parseInt(savedWidth));
+      }
+    }
+  }, []);
+  
+  // Handle sidebar resizing
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+      
+      // Calculate new width (min 200px, max 400px)
+      const newWidth = Math.max(200, Math.min(400, e.clientX));
+      setSidebarWidth(newWidth);
+      
+      // Save to localStorage
+      localStorage.setItem('silynkr-sidebar-width', newWidth.toString());
+    };
+    
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.body.style.cursor = 'default';
+      document.body.style.userSelect = 'auto';
+    };
+    
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+    }
+    
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+  
+  const startResizing = () => {
+    setIsResizing(true);
+  };
+
+  // Function to move a folder to another folder
+  const moveFolder = async () => {
+    if (!folderToMove) return;
+
+    try {
+      const storedMongoUri = typeof window !== 'undefined'
+        ? localStorage.getItem('MONGODB_URI') || ''
+        : '';
+
+      // Calculate new path and level
+      let newPath = '';
+      let newLevel = 0;
+      
+      if (targetFolderId) {
+        const parentFolder = folders.find(f => f._id === targetFolderId);
+        if (parentFolder) {
+          newPath = parentFolder.path ? `${parentFolder.path},${targetFolderId}` : targetFolderId;
+          newLevel = parentFolder.level ? parentFolder.level + 1 : 1;
+        }
+      }
+
+      // Make the API request to update the folder
+      const response = await fetch(`/api/folders/${folderToMove._id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-MongoDB-URI': storedMongoUri
+        },
+        body: JSON.stringify({
+          parentId: targetFolderId,
+          path: newPath,
+          level: newLevel
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Update folder in state
+        setFolders(prevFolders => 
+          prevFolders.map(f => 
+            f._id === folderToMove._id 
+              ? { ...f, parentId: targetFolderId, path: newPath, level: newLevel }
+              : f
+          )
+        );
+
+        // Auto-expand the target folder if it's not already expanded
+        if (targetFolderId) {
+          setExpandedFolders(prev => ({
+            ...prev,
+            [targetFolderId]: true
+          }));
+        }
+
+        setShowMoveDialog(false);
+        setFolderToMove(null);
+        setIsFolderMove(false);
+        showToast('Folder moved successfully', 'success');
+
+        // Refresh folders list to ensure UI is up to date
+        setTimeout(() => {
+          // Get MongoDB URI from localStorage if available
+          const storedMongoUri = typeof window !== 'undefined'
+            ? localStorage.getItem('MONGODB_URI') || ''
+            : '';
+          
+          // Fetch folders from API
+          fetch('/api/folders', {
+            headers: {
+              'X-MongoDB-URI': storedMongoUri
+            }
+          })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success && data.folders) {
+              setFolders(data.folders);
+            }
+          })
+          .catch(err => {
+            console.error('Error fetching folders:', err);
+          });
+        }, 500);
+      } else {
+        throw new Error(data.error || 'Failed to move folder');
+      }
+    } catch (error) {
+      console.error('Error moving folder:', error);
+      showToast('Failed to move folder', 'error');
+    }
+  };
+
+  // Recursive component to render folder options with proper indentation
+  const RenderFolderOption = ({ 
+    folder, 
+    level = 0, 
+    childFolders, 
+    disabledFolders = [] 
+  }: { 
+    folder: Folder, 
+    level?: number, 
+    childFolders: Record<string, Folder[]>,
+    disabledFolders?: string[]
+  }) => {
+    const children = childFolders[folder._id] || [];
+    const isDisabled = disabledFolders.includes(folder._id);
+    const padding = level * 16; // 16px indentation per level
+    
+    return (
+      <>
+        <option 
+          value={folder._id} 
+          disabled={isDisabled}
+          style={{ paddingLeft: `${padding}px` }}
+        >
+          {'-'.repeat(level)} {level > 0 ? '› ' : ''}{folder.name}
+        </option>
+        {children.map(child => (
+          <RenderFolderOption 
+            key={child._id} 
+            folder={child} 
+            level={level + 1} 
+            childFolders={childFolders}
+            disabledFolders={disabledFolders}
+          />
+        ))}
+      </>
+    );
+  };
+
   return (
     <div className={`flex h-screen flex-col ${darkMode ? 'dark' : ''}`}>
       {/* New version notification */}
       {showVersionNotification && (
-        <div className="bg-blue-50 dark:bg-blue-900/30 border-b border-blue-100 dark:border-blue-800">
+        <div className="bg-[#6C63FF]/5 dark:bg-[#5754D2]/20 border-b border-[#6C63FF]/10 dark:border-[#5754D2]/30">
           <div className="max-w-7xl mx-auto py-2 px-3 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between flex-wrap">
               <div className="flex items-center">
-                <span className="flex p-1 rounded-lg bg-blue-100 dark:bg-blue-800">
-                  <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-300" aria-hidden="true" />
+                <span className="flex p-1 rounded-lg bg-[#6C63FF]/10 dark:bg-[#5754D2]/30">
+                  <AlertCircle className="h-5 w-5 text-[#6C63FF] dark:text-[#5754D2]" aria-hidden="true" />
                 </span>
-                <p className="ml-3 font-medium text-blue-700 dark:text-blue-300 truncate text-sm">
+                <p className="ml-3 font-medium text-[#6C63FF] dark:text-[#5754D2] truncate text-sm">
                   <span>
-                    New beta version 1.1.0 released with interactive message controls! Try regenerating responses with different models.
+                    New beta version 1.2.0 released! Try the resizable sidebar and improved folder organization with drag and drop.
                   </span>
                 </p>
               </div>
@@ -1488,7 +1868,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                 <button
                   type="button"
                   onClick={() => setShowVersionNotification(false)}
-                  className="p-1.5 rounded-md text-blue-500 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  className="p-1.5 rounded-md text-[#6C63FF] dark:text-[#5754D2] hover:bg-[#6C63FF]/10 dark:hover:bg-[#5754D2]/30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#6C63FF]"
                 >
                   <span className="sr-only">Dismiss</span>
                   <X className="h-4 w-4" aria-hidden="true" />
@@ -1507,7 +1887,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
             className={`fixed top-4 right-4 z-50 p-4 rounded-md shadow-lg max-w-sm ${toastFading ? 'animate-fade-out' : 'animate-fade-in'
               } ${toast.type === 'success' ? 'bg-green-500' :
                 toast.type === 'error' ? 'bg-red-500' : 
-                'bg-blue-500'
+                'bg-[#6C63FF]'
               } text-white`}
           >
             <div className="flex items-center justify-between">
@@ -1541,8 +1921,12 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
           </div>
         )}
 
-        {/* Sidebar */}
-        <div className={`${sidebarOpen ? 'w-64' : 'w-0 opacity-0'} bg-gray-50 dark:bg-gray-800 border-r dark:border-gray-700 transition-all duration-300 flex flex-col`}>
+      {/* Sidebar */}
+        <div 
+          ref={sidebarRef}
+          className={`${sidebarOpen ? '' : 'w-0 opacity-0'} bg-gray-50 dark:bg-gray-800 border-r dark:border-gray-700 transition-opacity duration-300 flex flex-col relative`}
+          style={{ width: sidebarOpen ? `${sidebarWidth}px` : '0px' }}
+        >
           <div className="p-4 border-b dark:border-gray-700 flex items-center justify-between">
             <div className="flex items-center">
               <Image
@@ -1557,24 +1941,18 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
               <X size={18} className="text-gray-600 dark:text-gray-300" />
             </button>
           </div>
-
-          {/* <button className="m-3 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md transition-colors" 
-            onClick={createNewConversation}
-          >
-            <Plus size={16} />
-            <span>New Chat</span>
-          </button> */}
-
+        
           <div className="flex-1 overflow-y-auto px-3 space-y-2">
             {/* Recent Chats Section */}
             <div className="flex items-center justify-between">
               <div className="text-sm font-medium text-gray-500 dark:text-gray-400 mt-2 mb-1">Recent Chats</div>
-              <button className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+              <button className="text-xs text-[#6C63FF] dark:text-[#5754D2] hover:underline"
                 onClick={createNewConversation}
               >
                 <span>+ New Chat</span>
               </button>
             </div>
+            
             {loadingConversations ? (
               <div className="py-2 flex items-center justify-center">
                 <div className="animate-pulse flex space-x-2">
@@ -1594,7 +1972,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                       key={conv._id}
                       onClick={() => loadConversation(conv)}
                       onContextMenu={(e) => handleContextMenu(e, conv)}
-                      className={`w-full flex items-center text-left px-2 py-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 ${currentConversationId === conv._id ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'
+                      className={`w-full flex items-center text-left px-2 py-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 ${currentConversationId === conv._id ? 'bg-[#6C63FF]/10 dark:bg-[#5754D2]/30 text-[#6C63FF] dark:text-[#5754D2]' : 'text-gray-700 dark:text-gray-300'
                         }`}
                     >
                       <MessageSquare size={14} className="mr-2 flex-shrink-0" />
@@ -1613,20 +1991,20 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
               <div className="text-sm font-medium text-gray-500 dark:text-gray-400">Folders</div>
               <button
                 onClick={() => setShowNewFolderInput(!showNewFolderInput)}
-                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                className="text-xs text-[#6C63FF] dark:text-[#5754D2] hover:underline"
               >
                 + New
               </button>
             </div>
 
             {showNewFolderInput && (
-              <div className="mb-2 flex items-center">
+              <div className="mb-2 flex items-center max-w-full relative overflow-visible" ref={newFolderInputRef}>
                 <input
                   type="text"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
                   placeholder="Folder name"
-                  className="flex-1 text-sm border border-gray-300 dark:border-gray-600 rounded-l-md p-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-l-md p-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-white pr-16"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') createFolder();
                     if (e.key === 'Escape') {
@@ -1634,10 +2012,11 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                       setNewFolderName('');
                     }
                   }}
+                  autoFocus
                 />
                 <button
                   onClick={() => createFolder()}
-                  className="bg-blue-600 hover:bg-blue-700 text-white p-1 rounded-r-md text-sm"
+                  className="absolute right-0 top-0 bottom-0 bg-[#6C63FF] hover:bg-[#5754D2] text-white px-2 rounded-r-md text-xs whitespace-nowrap"
                 >
                   Create
                 </button>
@@ -1673,8 +2052,8 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
             )}
 
 
-          </div>
-
+        </div>
+        
           <div className="p-3 border-t dark:border-gray-700">
             <button className="w-full flex items-center gap-2 py-2 px-3 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300" onClick={() => setShowSettings(true)}>
               <Settings size={16} />
@@ -1691,23 +2070,38 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
             <div className="text-center text-xs text-gray-500 dark:text-gray-400">
               <div className="flex flex-col items-center justify-center gap-1">
                 <div>
-                  SiLynkr {getVersionString()} by <a href="https://si4k.me" target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-500">Si4k</a>
+                  SiLynkr {getVersionString()} by <a href="https://si4k.me" target="_blank" rel="noopener noreferrer" className="underline text-[#6C63FF] dark:text-[#5754D2]hover:text-[#5754D2] ">Si4k</a>
                 </div>
               </div>
             </div>
           </div>
+          
+          {/* Resize handle */}
+          {sidebarOpen && (
+            <div
+              ref={resizeRef}
+              className="absolute top-0 right-0 h-full w-1 cursor-ew-resize hover:bg-[#6C63FF] hover:w-1 z-10 group"
+              onMouseDown={startResizing}
+            >
+              <div className="invisible group-hover:visible absolute top-1/2 right-0 w-4 h-8 -translate-y-1/2 translate-x-1/2 flex items-center justify-center bg-[#6C63FF] rounded-full">
+                <svg className="w-3 h-3 text-white" viewBox="0 0 6 10" fill="currentColor">
+                  <path d="M1 1h1v8H1zM4 1h1v8H4z" />
+                </svg>
+              </div>
+            </div>
+          )}
         </div>
-
+      
         {/* Main Content - Center properly when sidebar is closed */}
         <div className={`flex-1 flex flex-col transition-all duration-300 ${!sidebarOpen ? 'ml-0 w-full' : ''}`}>
-          {/* Header */}
+        {/* Header */}
           <div className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 py-2">
             <div className={`${!sidebarOpen ? 'container mx-auto px-4' : 'px-4'} flex items-center justify-between`}>
-              {!sidebarOpen && (
+            {!sidebarOpen && (
                 <div className="flex items-center">
-                  <button onClick={() => setSidebarOpen(true)} className="p-2 mr-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700">
-                    <Menu size={20} className="text-gray-600 dark:text-gray-300" />
-                  </button>
+              <button onClick={() => setSidebarOpen(true)} className="p-2 mr-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700">
+                <Menu size={20} className="text-gray-600 dark:text-gray-300" />
+              </button>
                   <Image
                     src="/Horizontal-SiLynkr-Logo.png"
                     alt="SiLynkr Logo"
@@ -1720,40 +2114,40 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
               <div className={`${!sidebarOpen ? 'flex-1 flex justify-center' : 'flex-1 flex justify-center flex-col items-center'}`}>
                 {!showSettings && (
                   <div className="relative w-full max-w-2xl mx-auto">
-                    <select
-                      id="model-select"
-                      value={selectedModel}
-                      onChange={(e) => setSelectedModel(e.target.value)}
-                      className="w-full p-2 pl-4 pr-10 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      disabled={loading}
-                    >
-                      {models.length === 0 && (
-                        <option value="">No models available</option>
-                      )}
-                      {models.map((model) => (
-                        <option key={model.name} value={model.name}>
-                          {model.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <select
+                  id="model-select"
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="w-full p-2 pl-4 pr-10 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-[#6C63FF] focus:border-transparent"
+                  disabled={loading}
+                >
+                  {models.length === 0 && (
+                    <option value="">No models available</option>
+                  )}
+                  {models.map((model) => (
+                    <option key={model.name} value={model.name}>
+                      {model.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
                 )}
                 {showSettings && (
                   <h1 className="text-xl font-medium text-gray-900 dark:text-white">SiLynkr Settings</h1>
                 )}
-              </div>
-
-              <button
+            </div>
+            
+            <button 
                 onClick={() => setAppTheme(theme === 'light' ? 'dark' : 'light')}
                 className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
-              >
+            >
                 {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
-              </button>
-            </div>
+            </button>
           </div>
-
-          {/* Chat Area */}
-          <div className="flex-1 overflow-hidden bg-gray-50 dark:bg-gray-900 flex flex-col">
+        </div>
+        
+        {/* Chat Area */}
+        <div className="flex-1 overflow-hidden bg-gray-50 dark:bg-gray-900 flex flex-col">
             {showSettings ? (
               /* Settings View */
               <div className="flex-1 overflow-y-auto">
@@ -1769,39 +2163,40 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                     >
                       <X size={20} />
                     </button>
-                  </div>
+                </div>
 
                   <div className="flex flex-col md:flex-row gap-6">
                     {/* Settings navigation */}
                     <div className="md:w-64 shrink-0">
                       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+                        {/* Settings navigation tabs */}
                         <button
-                          className={`w-full text-left px-4 py-3 border-l-4 ${settingsView === 'general' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                          className={`w-full text-left px-4 py-3 border-l-4 ${settingsView === 'general' ? 'border-[#6C63FF] bg-[#6C63FF]/5 dark:bg-[#5754D2]/20 text-[#6C63FF] dark:text-[#5754D2]' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                           onClick={() => setSettingsView('general')}
                         >
                           General
                         </button>
                         <button
-                          className={`w-full text-left px-4 py-3 border-l-4 ${settingsView === 'advanced' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                          className={`w-full text-left px-4 py-3 border-l-4 ${settingsView === 'advanced' ? 'border-[#6C63FF] bg-[#6C63FF]/5 dark:bg-[#5754D2]/20 text-[#6C63FF] dark:text-[#5754D2]' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                           onClick={() => setSettingsView('advanced')}
                         >
                           Advanced Options
                         </button>
                         <button
-                          className={`w-full text-left px-4 py-3 border-l-4 ${settingsView === 'appearance' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                          className={`w-full text-left px-4 py-3 border-l-4 ${settingsView === 'appearance' ? 'border-[#6C63FF] bg-[#6C63FF]/5 dark:bg-[#5754D2]/20 text-[#6C63FF] dark:text-[#5754D2]' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                           onClick={() => setSettingsView('appearance')}
                         >
                           Appearance
                         </button>
                         <button
-                          className={`w-full text-left px-4 py-3 border-l-4 ${settingsView === 'updates' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                          className={`w-full text-left px-4 py-3 border-l-4 ${settingsView === 'updates' ? 'border-[#6C63FF] bg-[#6C63FF]/5 dark:bg-[#5754D2]/20 text-[#6C63FF] dark:text-[#5754D2]' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                           onClick={() => setSettingsView('updates')}
                         >
                           Updates
                         </button>
-                      </div>
-                    </div>
-
+              </div>
+          </div>
+          
                     {/* Settings content */}
                     <div className="flex-1 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">
                       {/* General Settings */}
@@ -1810,30 +2205,30 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                           <h3 className="text-lg font-medium text-gray-900 dark:text-white">General Settings</h3>
 
                           {/* System Prompt */}
-                          <div>
+                <div>
                             <label htmlFor="systemPrompt" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                              System Prompt
-                            </label>
-                            <textarea
+                    System Prompt
+                  </label>
+                  <textarea
                               id="systemPrompt"
                               rows={3}
-                              value={systemPrompt}
-                              onChange={(e) => setSystemPrompt(e.target.value)}
-                              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    value={systemPrompt}
+                    onChange={(e) => setSystemPrompt(e.target.value)}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                               placeholder="Optional system prompt to guide the assistant's responses"
-                            />
+                  />
                             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                               System prompt provides context to the model about how it should respond.
                             </p>
-                          </div>
-
+                </div>
+                
                           {/* MongoDB Connection */}
-                          <div>
+                <div>
                             <label htmlFor="mongodb-uri" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                               MongoDB Connection URI
-                            </label>
+                  </label>
                             <div className="flex gap-2">
-                              <input
+                  <input
                                 id="mongodb-uri"
                                 type="text"
                                 value={mongodbUri}
@@ -1842,7 +2237,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                                 placeholder="mongodb://username:password@host:port/database"
                               />
                               <button
-                                className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm"
+                                className="px-3 py-2 bg-[#6C63FF] hover:bg-[#5754D2] text-white rounded-md text-sm"
                                 onClick={saveMongoDbUri}
                               >
                                 Save
@@ -1862,7 +2257,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                                 type="checkbox"
                                 checked={autoSave}
                                 onChange={(e) => setAutoSave(e.target.checked)}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                className="h-4 w-4 text-[#6C63FF] focus:ring-[#5754D2] border-gray-300 rounded"
                               />
                               <label htmlFor="autosave" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
                                 Auto-save conversations after each response
@@ -1885,28 +2280,28 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                             </label>
                             <input
                               id="temperature"
-                              type="range"
-                              min="0"
-                              max="2"
-                              step="0.1"
-                              value={temperature}
-                              onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={temperature}
+                    onChange={(e) => setTemperature(parseFloat(e.target.value))}
                               className="w-full"
                             />
                             <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
                               <span>Precise (0)</span>
                               <span>Balanced (0.7)</span>
                               <span>Creative (2)</span>
-                            </div>
-                          </div>
+                  </div>
+                </div>
 
                           {/* Top-P */}
                           <div>
                             <label htmlFor="top-p" className="flex justify-between text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                               <span>Top-P</span>
                               <span className="text-gray-500 dark:text-gray-400">{topP}</span>
-                            </label>
-                            <input
+                  </label>
+                    <input
                               id="top-p"
                               type="range"
                               min="0"
@@ -1959,7 +2354,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                             </label>
                             <input
                               id="suffix"
-                              type="text"
+                      type="text"
                               value={suffixText}
                               onChange={(e) => setSuffixText(e.target.value)}
                               className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -1996,7 +2391,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                                 type="checkbox"
                                 checked={thinkingEnabled}
                                 onChange={(e) => setThinkingEnabled(e.target.checked)}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                className="h-4 w-4 text-[#6C63FF] focus:ring-[#5754D2] border-gray-300 rounded"
                               />
                               <label htmlFor="thinking-mode" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
                                 Enable thinking mode
@@ -2009,7 +2404,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                                 type="checkbox"
                                 checked={rawModeEnabled}
                                 onChange={(e) => setRawModeEnabled(e.target.checked)}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                className="h-4 w-4 text-[#6C63FF] focus:ring-[#5754D2] border-gray-300 rounded"
                               />
                               <label htmlFor="raw-mode" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
                                 Enable raw mode
@@ -2030,7 +2425,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                               {/* Light Theme */}
                               <div
-                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'light' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'light' ? 'border-[#6C63FF] shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                                   }`}
                                 onClick={() => setAppTheme('light')}
                               >
@@ -2053,7 +2448,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
 
                               {/* Dark Theme */}
                               <div
-                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'dark' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'dark' ? 'border-[#6C63FF] shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                                   }`}
                                 onClick={() => setAppTheme('dark')}
                               >
@@ -2076,7 +2471,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
 
                               {/* Obsidian Theme */}
                               <div
-                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'obsidian' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'obsidian' ? 'border-[#6C63FF] shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                                   }`}
                                 onClick={() => setAppTheme('obsidian')}
                               >
@@ -2099,7 +2494,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
 
                               {/* Nature Theme */}
                               <div
-                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'nature' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'nature' ? 'border-[#6C63FF] shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                                   }`}
                                 onClick={() => setAppTheme('nature')}
                               >
@@ -2122,7 +2517,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
 
                               {/* Sunset Theme */}
                               <div
-                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'sunset' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'sunset' ? 'border-[#6C63FF] shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                                   }`}
                                 onClick={() => setAppTheme('sunset')}
                               >
@@ -2145,23 +2540,23 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
 
                               {/* Custom Theme (Placeholder) */}
                               <div
-                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'custom' ? 'border-blue-500 shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                                className={`cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${theme === 'custom' ? 'border-[#6C63FF] shadow-md scale-[1.02]' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                                   }`}
                                 onClick={() => setAppTheme('custom')}
                               >
-                                <div className="bg-gradient-to-r from-blue-700 via-purple-700 to-pink-700 p-2">
+                                <div className="bg-gradient-to-r from-[#5754D2] via-purple-700 to-pink-700 p-2">
                                   <div className="flex items-center gap-1">
                                     <div className="w-2 h-2 rounded-full bg-white"></div>
                                     <div className="w-12 h-2 bg-white/30 rounded"></div>
                                   </div>
                                 </div>
                                 <div className="p-2 h-20 flex flex-col bg-gradient-to-b from-slate-900 to-slate-800">
-                                  <div className="w-3/4 h-2 bg-blue-500/30 rounded mb-1"></div>
+                                  <div className="w-3/4 h-2 bg-[#6C63FF]/30 rounded mb-1"></div>
                                   <div className="w-1/2 h-2 bg-purple-500/30 rounded"></div>
                                   <div className="flex-1"></div>
                                   <div className="w-full h-4 bg-slate-900 border border-slate-700 rounded"></div>
                                 </div>
-                                <div className="p-2 bg-slate-900 text-center text-xs font-medium text-blue-100">
+                                <div className="p-2 bg-slate-900 text-center text-xs font-medium text-[#6C63FF]">
                                   Custom
                                 </div>
                               </div>
@@ -2172,13 +2567,13 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                           <div className="space-y-3">
                             <h4 className="text-base font-medium text-gray-800 dark:text-gray-200">UI Density</h4>
                             <div className="flex space-x-4">
-                              <button className="px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-md text-sm font-medium">
+                              <button className="px-4 py-2 bg-[#6C63FF]/10 dark:bg-[#5754D2]/30 text-[#6C63FF] dark:text-[#5754D2] rounded-md text-sm font-medium">
                                 Comfortable
                               </button>
                               <button className="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 text-sm">
                                 Compact
-                              </button>
-                            </div>
+                    </button>
+                  </div>
                           </div>
 
                           {/* Font Size */}
@@ -2209,16 +2604,16 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                         <div className="space-y-6">
                           <h3 className="text-lg font-medium text-gray-900 dark:text-white">Updates</h3>
 
-                          <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md">
+                          <div className="bg-[#6C63FF]/5 dark:bg-[#5754D2]/20 p-4 rounded-md">
                             <div className="flex items-start">
-                              <div className="mr-3 flex-shrink-0 text-blue-500">
+                              <div className="mr-3 flex-shrink-0 text-[#6C63FF]">
                                 <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
                                   <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
                                 </svg>
                               </div>
                               <div>
-                                <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300">Current Version</h4>
-                                <div className="mt-1 text-sm text-blue-700 dark:text-blue-400">
+                                <h4 className="text-sm font-medium text-[#6C63FF] dark:text-[#5754D2]">Current Version</h4>
+                                <div className="mt-1 text-sm text-[#6C63FF] dark:text-[#5754D2]">
                                   SiLynkr {getVersionString()}
                                   <span className="ml-2 text-xs bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 py-0.5 px-1.5 rounded">Up to date</span>
                                 </div>
@@ -2255,16 +2650,16 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                 <div className={`${!sidebarOpen ? 'container mx-auto px-4' : ''}`}>
                   {messages.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-center p-6">
-                      <div className="w-16 h-16 mb-4 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
-                        <svg className="w-8 h-8 text-blue-600 dark:text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <div className="w-16 h-16 mb-4 bg-[#6C63FF]/10 dark:bg-[#5754D2]/30 rounded-full flex items-center justify-center">
+                        <svg className="w-8 h-8 text-[#6C63FF] dark:text-[#5754D2]" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                         </svg>
                       </div>
                       <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">Start a conversation</h3>
                       <p className="text-gray-500 dark:text-gray-400 max-w-md">
                         Ask questions, get creative responses, or explore what your local AI model can do.
-                      </p>
-                    </div>
+                  </p>
+                </div>
                   ) : (
                     <div className="space-y-6 max-w-4xl mx-auto w-full">
                       {messages.map((message, index) => (
@@ -2297,46 +2692,46 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                       </div>
                     </div>
                   )}
-                </div>
               </div>
-            )}
-
+            </div>
+          )}
+          
             {/* Input Area - only show when not in settings view */}
             {!showSettings && (
-              <div className="border-t dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
+          <div className="border-t dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
                 <form onSubmit={handleSubmit} className={`${!sidebarOpen ? 'container mx-auto' : ''} max-w-3xl mx-auto`}>
-                  <div className="relative">
-                    <textarea
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          if (input.trim() && !loading) handleSubmit(e);
-                        }
-                      }}
+              <div className="relative">
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (input.trim() && !loading) handleSubmit(e);
+                    }
+                  }}
                       placeholder="Message SiLynkr..."
-                      rows={1}
-                      className="w-full p-3 pr-24 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none overflow-hidden"
-                      disabled={loading}
-                    />
-                    <div className="absolute right-2 bottom-2 flex items-center space-x-1">
-                      <button
-                        type="submit"
-                        className="bg-blue-600 hover:bg-blue-700 text-white p-1.5 rounded-md transition-colors flex items-center justify-center disabled:bg-blue-400 dark:disabled:bg-blue-800 disabled:cursor-not-allowed"
-                        disabled={loading || !selectedModel || !input.trim()}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-                        </svg>
-                      </button>
+                  rows={1}
+                  className="w-full p-3 pr-24 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-[#6C63FF] focus:border-transparent resize-none overflow-hidden"
+                  disabled={loading}
+                />
+                <div className="absolute right-2 bottom-2 flex items-center space-x-1">
+                  <button
+                    type="submit"
+                    className="bg-[#6C63FF] hover:bg-[#5754D2] text-white p-1.5 rounded-md transition-colors flex items-center justify-center disabled:bg-[#6C63FF]/50 dark:disabled:bg-[#5754D2]/50 disabled:cursor-not-allowed"
+                    disabled={loading || !selectedModel || !input.trim()}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                    </svg>
+                  </button>
                       <div>
                         <div className="flex flex-col items-center justify-center gap-1 m-2">
                           <SaveIndicator />
                           <PortIndicator />
-                        </div>
-                      </div>
-                    </div>
+                </div>
+              </div>
+              </div>
                   </div>
 
                   {/* Token usage display */}
@@ -2347,10 +2742,10 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                       <span>Total: {totalTokens} tokens</span>
                     </div>
                   )}
-                </form>
-              </div>
-            )}
+            </form>
           </div>
+            )}
+        </div>
         </div>
 
         {/* Context Menu */}
@@ -2401,8 +2796,8 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
           <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-white/30 dark:bg-gray-900/30">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-96 max-w-md transform transition-all animate-fade-in-up">
               <h2 className="text-xl font-medium mb-4 text-gray-900 dark:text-white flex items-center">
-                <FolderIcon size={18} className="mr-2 text-blue-600 dark:text-blue-400" />
-                Move Conversation
+                <FolderIcon size={18} className="mr-2 text-[#6C63FF] dark:text-[#5754D2]" />
+                {isFolderMove ? 'Move Folder' : 'Move Conversation'}
               </h2>
 
               <div className="mb-6">
@@ -2416,12 +2811,38 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                     const value = e.target.value;
                     setTargetFolderId(value === '' ? null : value);
                   }}
-                  className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
+                  className="w-full p-2.5 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-[#6C63FF] focus:border-transparent shadow-sm"
+                  style={{ textIndent: '0px' }}
                 >
                   <option value="">None (Root)</option>
-                  {folders.map(folder => (
-                    <option key={folder._id} value={folder._id}>{folder.name}</option>
-                  ))}
+                  {(() => {
+                    // Get folder hierarchy
+                    const { rootFolders, childFolders } = getFolderHierarchy(folders);
+                    
+                    // If moving a folder, we need to disable the folder itself and all its children
+                    // to prevent circular references
+                    const disabledFolders: string[] = [];
+                    
+                    if (isFolderMove && folderToMove) {
+                      // Recursive function to collect folder and all its children
+                      const collectSubfolders = (folderId: string) => {
+                        disabledFolders.push(folderId);
+                        const children = childFolders[folderId] || [];
+                        children.forEach(child => collectSubfolders(child._id));
+                      };
+                      
+                      collectSubfolders(folderToMove._id);
+                    }
+                    
+                    return rootFolders.map(folder => (
+                      <RenderFolderOption
+                        key={folder._id}
+                        folder={folder}
+                        childFolders={childFolders}
+                        disabledFolders={disabledFolders}
+                      />
+                    ));
+                  })()}
                 </select>
               </div>
 
@@ -2430,14 +2851,16 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                   onClick={() => {
                     setShowMoveDialog(false);
                     setConversationToMove(null);
+                    setFolderToMove(null);
+                    setIsFolderMove(false);
                   }}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={moveConversation}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors shadow-sm"
+                  onClick={isFolderMove ? moveFolder : moveConversation}
+                  className="px-4 py-2 bg-[#6C63FF] hover:bg-[#5754D2] text-white rounded-md text-sm font-medium transition-colors shadow-sm"
                 >
                   Move
                 </button>
@@ -2496,6 +2919,59 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
             rawModeEnabled={rawModeEnabled}
             setRawModeEnabled={setRawModeEnabled}
           />
+        )}
+
+        {/* Folder Context Menu */}
+        {folderContextMenu.folder && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={closeFolderContextMenu}
+            />
+            <div
+              className="fixed z-50 bg-white dark:bg-gray-800 rounded-md shadow-lg py-1 w-48 border border-gray-200 dark:border-gray-700"
+              style={{
+                top: `${folderContextMenu.y}px`,
+                left: `${folderContextMenu.x}px`,
+                transform: 'translate(-50%, -50%)'
+              }}
+            >
+              <button
+                onClick={() => startCreateSubfolder(folderContextMenu.folder!._id)}
+                className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 w-full text-left flex items-center"
+              >
+                <FolderIcon size={14} className="mr-2" />
+                Add Subfolder
+              </button>
+              <button
+                onClick={() => showMoveFolderToFolderDialog(folderContextMenu.folder!)}
+                className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 w-full text-left flex items-center"
+              >
+                <FolderIcon size={14} className="mr-2" />
+                Move Folder
+              </button>
+              <button
+                onClick={() => {
+                  console.log('Change color button clicked', folderContextMenu);
+                  showFolderColorPicker(folderContextMenu.folder!, folderContextMenu.x, folderContextMenu.y - 50);
+                }}
+                className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 w-full text-left flex items-center"
+              >
+                <span className="mr-2 w-3 h-3 rounded-full" style={{ backgroundColor: folderContextMenu.folder?.color || '#6C63FF' }}></span>
+                Change Color
+              </button>
+              <hr className="my-1 border-gray-200 dark:border-gray-700" />
+              <button
+                onClick={() => deleteFolder(folderContextMenu.folder!._id)}
+                className="px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 w-full text-left flex items-center"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Delete
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>

@@ -1,6 +1,6 @@
 {
   "name": "silynkr",
-  "version": "1.0.0-beta",
+  "version": "1.2.0-beta",
   "description": "SiLynkr - A modern, feature-rich web interface for Ollama AI models by Si4k (si4k.me)",
   "private": true,
   "scripts": {
@@ -29,6 +29,7 @@
     "next": "15.3.1",
     "qrcode.react": "^4.2.0",
     "react": "^19.0.0",
+    "react-colorful": "^5.6.1",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
     "react-syntax-highlighter": "^15.6.1",
