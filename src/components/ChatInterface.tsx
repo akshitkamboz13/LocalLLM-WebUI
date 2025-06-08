@@ -42,7 +42,15 @@ interface ChatInterfaceProps {
   conversationId?: string;
 }
 
+interface DragItem {
+  type: 'conversation' | 'folder';
+  id: string;
+  folderId?: string | null;
+}
+
 export default function ChatInterface({ conversationId }: ChatInterfaceProps = {}) {
+  // Remove the CSS effect setup, we'll use direct inline styles instead
+  
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [input, setInput] = useState<string>('');
@@ -131,6 +139,22 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
   
   // Add additional useRef hooks at the component level
   const newFolderInputRef = useRef<HTMLDivElement>(null);
+  
+  // Add state for delete target
+  const [showDeleteTarget, setShowDeleteTarget] = useState<boolean>(false);
+  const [deleteTargetActive, setDeleteTargetActive] = useState<boolean>(false);
+  // Add state for custom confirmation dialog
+  const [confirmDelete, setConfirmDelete] = useState<{
+    show: boolean;
+    type: 'conversation' | 'folder' | null;
+    item: SavedConversation | Folder | null;
+    title: string;
+  }>({
+    show: false,
+    type: null,
+    item: null,
+    title: ''
+  });
   
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1394,7 +1418,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
     closeFolderContextMenu();
   };
 
-  // Render a folder and its children recursively
+  // Update the RenderFolder component with simpler drag and drop handling
   const RenderFolder = ({ folder, childFolders }: { folder: Folder, childFolders: Record<string, Folder[]> }) => {
     const hasChildren = childFolders[folder._id] && childFolders[folder._id].length > 0;
     const isExpanded = expandedFolders[folder._id];
@@ -1425,103 +1449,58 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
     };
 
     return (
-      <div key={folder._id} className="space-y-0.5">
-        <div className="flex items-center w-full">
+      <div className="mb-1">
+        <div 
+          className="relative group flex items-center justify-between rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+          onDragOver={(e) => handleDragOver(e, folder._id)}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, folder._id)}
+        >
           <button
             onClick={() => toggleFolder(folder._id)}
             onContextMenu={(e) => {
-              console.log("Right-click detected on folder:", folder.name);
+              e.preventDefault();
               showFolderContextMenu(e, folder);
             }}
-            className="flex-1 flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
+            className="flex-grow flex items-center justify-between px-2 py-1.5 rounded-md text-gray-700 dark:text-gray-300 cursor-grab"
+            draggable
+            onDragStart={(e) => handleDragStart(e, 'folder', folder._id, folder.parentId || null)}
+            onDragEnd={handleDragEnd}
           >
             <div className="flex items-center gap-2 text-sm">
               <div style={{ paddingLeft: `${(folder.level || 0) * 12}px` }} className="flex items-center gap-2">
-                <FolderIcon size={14} className={folder.color ? '' : ''} style={{ color: folder.color || '#6C63FF' }} />
-                <span>{folder.name}</span>
+                <FolderIcon size={14} style={{ color: folder.color || '#6C63FF' }} />
+                <span className="truncate">{folder.name}</span>
               </div>
             </div>
+
             <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'transform rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
 
-          {/* Add button with dropdown */}
-          <div className="relative ml-1" ref={dropdownRef}>
+          {/* Folder dropdown menu */}
+          {showFolderDropdown && (
+            <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg z-50 border border-gray-200 dark:border-gray-700" ref={dropdownRef}>
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowFolderDropdown(!showFolderDropdown);
-              }}
-              className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none"
-              title="Add to folder"
-            >
-              <Plus size={14} className="text-gray-500 dark:text-gray-400" />
+                onClick={createNewChatInFolder}
+                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
+              >
+                New Chat in Folder
             </button>
-
-            {/* Dropdown menu */}
-            {showFolderDropdown && (
-              <>
-                <div
-                  className="absolute right-0 top-full mt-1 w-48 rounded-md shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5 focus:outline-none z-10 border border-gray-200 dark:border-gray-700"
-                  role="menu"
-                  aria-orientation="vertical"
-                >
-                  <div className="py-1" role="none">
                     <button
                       onClick={() => {
-                        startCreateSubfolder(folder._id);
                         setShowFolderDropdown(false);
+                  showMoveFolderToFolderDialog(folder);
                       }}
-                      className="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 w-full text-left"
-                      role="menuitem"
+                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
                     >
-                      <FolderIcon size={14} className="mr-2" />
-                      <span>New Subfolder</span>
-                    </button>
-                    <button
-                      onClick={createNewChatInFolder}
-                      className="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 w-full text-left"
-                      role="menuitem"
-                    >
-                      <MessageSquare size={14} className="mr-2" />
-                      <span>New Chat</span>
+                Move Folder
                     </button>
                   </div>
-                </div>
-              </>
             )}
-          </div>
         </div>
 
-        {/* New subfolder input */}
-        {showNewSubfolderInput && newSubfolderParentId === folder._id && (
-          <div className="ml-6 mb-2 flex items-center max-w-full relative overflow-visible subfolder-input-container">
-            <input
-              type="text"
-              value={newFolderName}
-              onChange={(e) => setNewFolderName(e.target.value)}
-              placeholder="Subfolder name"
-              className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-l-md p-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-white pr-16"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') createFolder(folder._id);
-                if (e.key === 'Escape') {
-                  setShowNewSubfolderInput(false);
-                  setNewFolderName('');
-                }
-              }}
-              autoFocus
-            />
-            <button
-              onClick={() => createFolder(folder._id)}
-              className="absolute right-0 top-0 bottom-0 bg-[#6C63FF] hover:bg-[#5754D2] text-white px-2 rounded-r-md text-xs whitespace-nowrap"
-            >
-              Create
-            </button>
-          </div>
-        )}
-
-        {/* Folder contents when expanded */}
         {isExpanded && (
           <div className="ml-4 pl-2 border-l dark:border-gray-700 space-y-0.5">
             {/* Child folders */}
@@ -1539,7 +1518,6 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                 if (typeof conv.folderId === 'string') {
                   return conv.folderId === folder._id;
                 } else if (conv.folderId && typeof conv.folderId === 'object') {
-                  // Handle case where folderId is an object with _id property
                   return (conv.folderId as any)._id === folder._id;
                 }
                 return false;
@@ -1551,8 +1529,11 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                     key={conv._id}
                     onClick={() => loadConversation(conv)}
                     onContextMenu={(e) => handleContextMenu(e, conv)}
-                    className={`w-full text-left px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-xs truncate ${currentConversationId === conv._id ? 'bg-[#6C63FF]/10 dark:bg-[#5754D2]/30 text-[#6C63FF] dark:text-[#5754D2]' : 'text-gray-600 dark:text-gray-400'
-                      }`}
+                    className={`w-full text-left px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-xs truncate cursor-grab
+                      ${currentConversationId === conv._id ? 'bg-[#6C63FF]/10 dark:bg-[#5754D2]/30 text-[#6C63FF] dark:text-[#5754D2]' : 'text-gray-600 dark:text-gray-400'}`}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, 'conversation', conv._id, folder._id)}
+                    onDragEnd={handleDragEnd}
                   >
                     {conv.title}
                   </button>
@@ -1847,6 +1828,295 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
     );
   };
 
+  // Simple, direct implementation for drag and drop
+  const handleDragStart = (e: React.DragEvent<HTMLElement>, type: 'conversation' | 'folder', id: string, currentFolderId?: string | null) => {
+    // Use the simplest possible data format
+    const data = JSON.stringify({
+      type,
+      id,
+      folderId: currentFolderId
+    });
+    
+    // Set data in the most compatible format
+    e.dataTransfer.setData('text/plain', data);
+    
+    // Add basic styling to the dragged element
+    e.currentTarget.style.opacity = '0.4';
+    
+    // Show the delete target
+    setShowDeleteTarget(true);
+    
+    console.log(`Started dragging ${type} with ID ${id}`);
+  };
+  
+  const handleDragEnd = (e: React.DragEvent<HTMLElement>) => {
+    // Restore normal appearance
+    e.currentTarget.style.opacity = '1';
+    
+    // Hide the delete target
+    setShowDeleteTarget(false);
+    setDeleteTargetActive(false);
+    
+    console.log('Drag operation ended');
+  };
+  
+  const handleDragOver = (e: React.DragEvent<HTMLElement>, folderId: string) => {
+    // The most critical part - prevent default to allow drop
+    e.preventDefault();
+    
+    // Add visual indication that item can be dropped here
+    e.currentTarget.style.backgroundColor = 'rgba(108, 99, 255, 0.2)';
+    e.currentTarget.style.border = '2px dashed #6C63FF';
+    
+    console.log(`Dragging over folder ${folderId}`);
+  };
+  
+  const handleDragLeave = (e: React.DragEvent<HTMLElement>) => {
+    // Restore normal appearance
+    e.currentTarget.style.backgroundColor = '';
+    e.currentTarget.style.border = '';
+  };
+  
+  const handleDrop = async (e: React.DragEvent<HTMLElement>, targetFolderId: string) => {
+    // Always prevent default behavior
+    e.preventDefault();
+    
+    // Restore normal appearance
+    e.currentTarget.style.backgroundColor = '';
+    e.currentTarget.style.border = '';
+    
+    try {
+      // Get the data
+      const dataString = e.dataTransfer.getData('text/plain');
+      if (!dataString) {
+        console.error('No data found in drop event');
+        return;
+      }
+      
+      const data = JSON.parse(dataString);
+      console.log('Drop data received:', data);
+      
+      if (data.type === 'conversation') {
+        // Find the conversation
+        const conversation = savedConversations.find(c => c._id === data.id);
+        if (!conversation) {
+          console.error('Conversation not found');
+          return;
+        }
+        
+        // Skip if already in this folder
+        const currentFolderId = typeof conversation.folderId === 'string' 
+          ? conversation.folderId 
+          : conversation.folderId?._id;
+          
+        if (currentFolderId === targetFolderId) {
+          console.log('Conversation is already in this folder');
+          return;
+        }
+        
+        // Move the conversation
+        const updatedConversation = { ...conversation, folderId: targetFolderId };
+        
+        // Optimistic UI update
+        setSavedConversations(prev => 
+          prev.map(c => c._id === data.id ? { ...c, folderId: targetFolderId } : c)
+        );
+        
+        // Save to server
+        const response = await fetch(`/api/conversations/${data.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-mongodb-uri': mongodbUri || '',
+          },
+          body: JSON.stringify({ conversation: updatedConversation }),
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.status}`);
+        }
+        
+        // Show success message
+        showToast('Conversation moved successfully', 'success');
+        
+      } else if (data.type === 'folder') {
+        // Cannot move folder to itself
+        if (data.id === targetFolderId) {
+          showToast('Cannot move a folder into itself', 'error');
+          return;
+        }
+        
+        // Find the folder
+        const folder = folders.find(f => f._id === data.id);
+        if (!folder) {
+          console.error('Folder not found');
+          return;
+        }
+        
+        // Skip if already a child of this folder
+        if (folder.parentId === targetFolderId) {
+          console.log('Folder is already in this location');
+          return;
+        }
+        
+        // Check for circular reference
+        if (wouldCreateCircularReference(data.id, targetFolderId)) {
+          showToast('Cannot move a folder into its own subfolder', 'error');
+          return;
+        }
+        
+        // Optimistic UI update
+        setFolders(prev => 
+          prev.map(f => f._id === data.id ? { ...f, parentId: targetFolderId } : f)
+        );
+        
+        // Save to server
+        const response = await fetch(`/api/folders/${data.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-MongoDB-URI': mongodbUri || '',
+          },
+          body: JSON.stringify({ parentId: targetFolderId }),
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.status}`);
+        }
+        
+        // Show success message
+        showToast('Folder moved successfully', 'success');
+        
+        // Auto-expand the target folder
+        if (targetFolderId) {
+          setExpandedFolders(prev => ({
+            ...prev,
+            [targetFolderId]: true
+          }));
+        }
+      }
+    } catch (error) {
+      console.error('Error handling drop:', error);
+      showToast(`Error moving item: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+    }
+  };
+  
+  // Helper function to check if moving a folder would create a circular reference
+  const wouldCreateCircularReference = (folderId: string, targetParentId: string | null): boolean => {
+    if (!targetParentId) return false; // Moving to root is always safe
+    if (folderId === targetParentId) return true; // Can't move a folder into itself
+    
+    // Check if target is a descendant of the folder
+    const targetFolder = folders.find(f => f._id === targetParentId);
+    if (!targetFolder || !targetFolder.parentId) return false;
+    
+    // Check if any ancestor of target is the folder we're moving
+    let currentParentId: string | null = targetFolder.parentId;
+    while (currentParentId) {
+      if (currentParentId === folderId) return true;
+      const parent = folders.find(f => f._id === currentParentId);
+      currentParentId = parent?.parentId || null;
+    }
+    
+    return false;
+  };
+
+  // Add handler for delete target interactions
+  const handleDeleteTargetDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDeleteTargetActive(true);
+  };
+  
+  const handleDeleteTargetDragLeave = () => {
+    setDeleteTargetActive(false);
+  };
+  
+  const handleDeleteTargetDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDeleteTargetActive(false);
+    setShowDeleteTarget(false);
+    
+    try {
+      const dataString = e.dataTransfer.getData('text/plain');
+      if (!dataString) {
+        console.error('No data found in drop event');
+        return;
+      }
+      
+      const data = JSON.parse(dataString);
+      console.log('Item dropped for deletion:', data);
+      
+      if (data.type === 'conversation') {
+        // Find the conversation
+        const conversation = savedConversations.find(c => c._id === data.id);
+        if (!conversation) {
+          console.error('Conversation not found');
+          return;
+        }
+        
+        // Show custom confirmation dialog instead of window.confirm
+        setConfirmDelete({
+          show: true,
+          type: 'conversation',
+          item: conversation,
+          title: conversation.title || 'Untitled'
+        });
+      } else if (data.type === 'folder') {
+        // Find the folder
+        const folder = folders.find(f => f._id === data.id);
+        if (!folder) {
+          console.error('Folder not found');
+          return;
+        }
+        
+        // Show custom confirmation dialog instead of window.confirm
+        setConfirmDelete({
+          show: true,
+          type: 'folder',
+          item: folder,
+          title: folder.name || 'Untitled'
+        });
+      }
+    } catch (error) {
+      console.error('Error handling deletion:', error);
+      showToast(`Error deleting item: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+    }
+  };
+  
+  // Add function to handle delete confirmation
+  const handleConfirmDelete = async () => {
+    try {
+      if (confirmDelete.type === 'conversation' && confirmDelete.item) {
+        await deleteConversation(confirmDelete.item as SavedConversation);
+        showToast('Conversation deleted successfully', 'success');
+      } else if (confirmDelete.type === 'folder' && confirmDelete.item) {
+        await deleteFolder((confirmDelete.item as Folder)._id);
+        showToast('Folder deleted successfully', 'success');
+      }
+    } catch (error) {
+      console.error('Error deleting item:', error);
+      showToast(`Error deleting item: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+    } finally {
+      // Reset confirmation dialog
+      setConfirmDelete({
+        show: false,
+        type: null,
+        item: null,
+        title: ''
+      });
+    }
+  };
+  
+  // Add function to cancel delete
+  const handleCancelDelete = () => {
+    setConfirmDelete({
+      show: false,
+      type: null,
+      item: null,
+      title: ''
+    });
+  };
+
   return (
     <div className={`flex h-screen flex-col ${darkMode ? 'dark' : ''}`}>
       {/* New version notification */}
@@ -1881,6 +2151,90 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
 
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
+        {/* Delete target */}
+        {showDeleteTarget && (
+          <div 
+            className="fixed bottom-8 right-8 z-50 flex items-center justify-center transition-all duration-200"
+            style={{
+              width: deleteTargetActive ? '60px' : '50px',
+              height: deleteTargetActive ? '60px' : '50px',
+              backgroundColor: deleteTargetActive ? 'rgb(239, 68, 68)' : 'rgb(220, 38, 38)',
+              borderRadius: '50%',
+              boxShadow: deleteTargetActive ? '0 0 15px rgba(239, 68, 68, 0.7)' : '0 0 10px rgba(220, 38, 38, 0.5)'
+            }}
+            onDragOver={handleDeleteTargetDragOver}
+            onDragLeave={handleDeleteTargetDragLeave}
+            onDrop={handleDeleteTargetDrop}
+          >
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              className="h-6 w-6 text-white"
+              fill="none" 
+              viewBox="0 0 24 24" 
+              stroke="currentColor"
+            >
+              <path 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                strokeWidth={2} 
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" 
+              />
+            </svg>
+          </div>
+        )}
+        
+        {/* Custom Delete Confirmation Dialog */}
+        {confirmDelete.show && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-black/30">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full transform transition-all animate-fade-in-up border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                  <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    className="h-6 w-6 text-red-600 dark:text-red-500"
+                    fill="none" 
+                    viewBox="0 0 24 24" 
+                    stroke="currentColor"
+                  >
+                    <path 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round" 
+                      strokeWidth={2} 
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" 
+                    />
+                  </svg>
+                </div>
+              </div>
+              
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white text-center mb-2">
+                Confirm Deletion
+              </h3>
+              
+              <p className="text-center text-gray-600 dark:text-gray-300 mb-6">
+                {confirmDelete.type === 'conversation' 
+                  ? `Are you sure you want to delete the conversation "${confirmDelete.title}"?`
+                  : `Are you sure you want to delete the folder "${confirmDelete.title}" and move all its conversations to root?`
+                }
+              </p>
+              
+              <div className="flex justify-center space-x-4">
+                <button
+                  onClick={handleCancelDelete}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium transition-colors shadow-sm"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Toast notification */}
         {toast && (
           <div 
@@ -1944,12 +2298,13 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
         
           <div className="flex-1 overflow-y-auto px-3 space-y-2">
             {/* Recent Chats Section */}
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-medium text-gray-500 dark:text-gray-400 mt-2 mb-1">Recent Chats</div>
-              <button className="text-xs text-[#6C63FF] dark:text-[#5754D2] hover:underline"
+            <div className="flex justify-between items-center mb-1">
+              <div className="text-sm font-medium text-gray-500 dark:text-gray-400">Recent Chats</div>
+              <button
                 onClick={createNewConversation}
+                className="text-xs text-[#6C63FF] dark:text-[#5754D2] hover:underline"
               >
-                <span>+ New Chat</span>
+                + New
               </button>
             </div>
             
@@ -1972,8 +2327,11 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
                       key={conv._id}
                       onClick={() => loadConversation(conv)}
                       onContextMenu={(e) => handleContextMenu(e, conv)}
-                      className={`w-full flex items-center text-left px-2 py-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 ${currentConversationId === conv._id ? 'bg-[#6C63FF]/10 dark:bg-[#5754D2]/30 text-[#6C63FF] dark:text-[#5754D2]' : 'text-gray-700 dark:text-gray-300'
-                        }`}
+                      className={`w-full flex items-center text-left px-2 py-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 cursor-grab
+                        ${currentConversationId === conv._id ? 'bg-[#6C63FF]/10 dark:bg-[#5754D2]/30 text-[#6C63FF] dark:text-[#5754D2]' : 'text-gray-700 dark:text-gray-300'}`}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, 'conversation', conv._id, null)}
+                      onDragEnd={handleDragEnd}
                     >
                       <MessageSquare size={14} className="mr-2 flex-shrink-0" />
                       <span className="text-sm truncate">{conv.title}</span>
@@ -1987,7 +2345,7 @@ export default function ChatInterface({ conversationId }: ChatInterfaceProps = {
               </div>
             )}
             {/* Folders Section */}
-            <div className="flex justify-between items-center mb-1">
+            <div className="flex justify-between items-center mb-1 mt-4">
               <div className="text-sm font-medium text-gray-500 dark:text-gray-400">Folders</div>
               <button
                 onClick={() => setShowNewFolderInput(!showNewFolderInput)}
